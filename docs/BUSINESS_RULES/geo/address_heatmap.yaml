@@ -1,0 +1,39 @@
+rule_id: address_heatmap
+name: "Тепловая карта адресов клиентов"
+category: geo
+priority: 6
+
+description: |
+  Визуализация плотности заказов по географическим координатам.
+  Требует геокдирования адресов.
+
+required_data:
+  fields: [address, revenue, date]
+  min_records: 100
+  geocoding: true
+
+calculation:
+  type: spatial_aggregation
+  method: kernel_density
+  params:
+    radius_km: 5
+    weight_by: revenue
+
+ui:
+  component: heatmap_map
+  config:
+    provider: yandex_maps
+    center:
+      lat: 55.75
+      lon: 37.61
+    zoom: 10
+    color_stops: [0, 25, 50, 75, 100]
+
+filters_required: [date_range, region]
+industry: [retail, logistics, services]
+
+dependencies: [geocoding_service]
+
+forecasting:
+  enabled: false
+  reason: "Пространственный анализ, не временной ряд"

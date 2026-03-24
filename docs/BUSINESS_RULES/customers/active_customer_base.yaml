@@ -1,0 +1,40 @@
+rule_id: active_customer_base
+name: "Активная клиентская база (АКБ)"
+category: customers
+priority: 9
+
+description: |
+  Количество уникальных клиентов с хотя бы одной покупкой в выбранном периоде.
+  База для расчёта удержания, LTV, концентрации.
+
+required_data:
+  fields: [customer, revenue, date]
+  min_records: 50
+  time_span_days: 30
+
+calculation:
+  type: aggregation
+  function: count_distinct
+  field: customer
+  filter:
+    revenue:
+      $gt: 0
+
+ui:
+  component: kpi_card
+  title: "Активные клиенты"
+  format: "{value} шт."
+  sparkline: true
+
+filters_required: [date_range, customer_segment]
+industry: [retail, wholesale, services]
+
+related_rules:
+  - customer_retention_rate
+  - customer_concentration_top5
+
+forecasting:
+  enabled: true
+  methods: [prophet, exponential_smoothing]
+  min_history_points: 20
+  default_horizon_days: 60

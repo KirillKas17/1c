@@ -1,0 +1,40 @@
+rule_id: abc_analysis
+name: "ABC-анализ товаров"
+category: products
+priority: 8
+
+description: |
+  Классификация товаров по вкладу в выручку (принцип Парето).
+  Группа A: 20% товаров → 80% выручки (фокус управления).
+
+required_data:
+  fields: [product, revenue]
+  min_records: 20
+
+calculation:
+  type: pareto_classification
+  steps:
+    - group_by: product
+    - aggregate: sum(revenue)
+    - sort: desc
+    - cumulative_pct: running_sum / total
+    - classify:
+        A: cumulative_pct <= 0.80
+        B: cumulative_pct <= 0.95
+        C: cumulative_pct > 0.95
+
+ui:
+  component: pareto_chart
+  secondary: table
+  config:
+    show_cumulative_line: true
+    thresholds:
+      A: 80
+      B: 95
+      C: 100
+    top_n_display: 20
+
+filters_required: [date_range, category]
+industry: [retail, wholesale, production]
+
+export_formats: [png, pdf, xlsx]

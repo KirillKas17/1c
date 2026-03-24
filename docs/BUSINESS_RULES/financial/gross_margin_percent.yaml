@@ -1,0 +1,38 @@
+rule_id: gross_margin_percent
+name: "Валовая маржинальность, %"
+category: finance
+priority: 10
+
+description: |
+  Доля прибыли в выручке после вычета себестоимости.
+  Норма: розница 20-40%, опт 10-25%, производство 30-60%.
+
+required_data:
+  fields: [revenue, cost]
+  min_records: 50
+  time_span_days: 30
+
+calculation:
+  type: weighted_average
+  formula: "((revenue - cost) / revenue) * 100"
+  aggregation: sum
+
+ui:
+  component: kpi_card
+  title: "Маржинальность"
+  format: "{value}%"
+  comparison:
+    enabled: true
+    type: prev_period
+    trend_threshold: 2
+
+filters_required: [date_range, category]
+industry: [retail, wholesale, production]
+
+risk_flags:
+  - if value < 10: "⚠️ Низкая маржа — проверьте ценообразование"
+  - if value > 60: "ℹ️ Очень высокая маржа — возможна ошибка в данных"
+
+sources:
+  - "1С:Отчёт 'Валовая прибыль предприятия'"
+  - "Управленческий учёт: формула валовой маржи"

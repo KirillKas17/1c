@@ -1,0 +1,44 @@
+rule_id: sales_dynamics
+name: "Динамика продаж"
+category: time_series
+priority: 10
+
+description: |
+  Изменение выручки во времени с возможностью сравнения периодов.
+  Базовая метрика для анализа трендов и сезонности.
+
+required_data:
+  fields: [revenue, date]
+  min_records: 30
+  time_span_days: 30
+
+calculation:
+  type: time_series_aggregation
+  group_by: date
+  period: month
+  function: sum
+  field: revenue
+
+ui:
+  component: line_chart
+  title: "Динамика продаж"
+  config:
+    show_trend_line: true
+    show_comparison: true
+    comparison_type: prev_period
+
+filters_required: [date_range, category]
+industry: [retail, wholesale, production, services]
+
+related_rules:
+  - gross_margin_percent
+  - revenue_growth_yoy
+
+forecasting:
+  enabled: true
+  methods: [prophet, arima, xgboost, exponential_smoothing, ensemble]
+  min_history_points: 30
+  default_horizon_days: 90
+  max_horizon_days: 365
+  confidence_intervals: [0.8, 0.95]
+  decomposition: true
