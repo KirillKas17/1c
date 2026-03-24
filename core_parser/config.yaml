@@ -571,6 +571,87 @@ field_patterns:
         priority: 5
         context_keywords: ['руб']
     validate: 'float'
+  
+  # Цена БЕЗ НДС (нетто)
+  amount_without_vat:
+    patterns:
+      - pattern: r'(?:сумма\s+без\s+ндс|без\s+налога|база\s+для\s+ндс|стоимость\s+без\s+налога)[\s:‑\-\/]*([\d\s,\.]+)'
+        priority: 10
+        context_keywords: ['без ндс', 'без налога', 'база']
+      - pattern: r'(?:итого\s+без\s+ндс|всего\s+без\s+налога)[\s:‑\-\/]*([\d\s,\.]+)'
+        priority: 9
+        context_keywords: ['без ндс', 'без налога']
+      - pattern: r'([\d\s,\.]+)\s*(?:руб\.)?\s*\(без\s+ндс\)'
+        priority: 8
+        context_keywords: ['без ндс']
+    validate: 'float'
+  
+  # Цена С НДС (брутто)
+  amount_with_vat:
+    patterns:
+      - pattern: r'(?:сумма\s+с\s+ндс|включая\s+ндс|с\s+учетом\s+налога|стоимость\s+с\s+налогом)[\s:‑\-\/]*([\d\s,\.]+)'
+        priority: 10
+        context_keywords: ['с ндс', 'с налогом', 'включая ндс']
+      - pattern: r'(?:итого\s+с\s+ндс|всего\s+с\s+налогом)[\s:‑\-\/]*([\d\s,\.]+)'
+        priority: 9
+        context_keywords: ['с ндс', 'с налогом']
+      - pattern: r'([\d\s,\.]+)\s*(?:руб\.)?\s*\(в\s+т\.ч\.\s*ндс\)'
+        priority: 8
+        context_keywords: ['в т.ч.', 'ндс']
+    validate: 'float'
+  
+  # НДС (сумма налога)
+  vat_amount:
+    patterns:
+      - pattern: r'(?:ндс|налог)[\s:‑\-\/]*(?:в\s+том\s+числе\s+)?([\d\s,\.]+)'
+        priority: 10
+        context_keywords: ['ндс', 'налог']
+      - pattern: r'([\d\s,\.]+)\s*(?:руб\.)?\s*\(ндс\s+(\d+)%\)'
+        priority: 9
+        context_keywords: ['ндс']
+      - pattern: r'ндс\s+(\d+)%?\s*[:\-]\s*([\d\s,\.]+)'
+        priority: 8
+        context_keywords: ['ндс']
+    validate: 'float'
+  
+  # Вес БРУТТО (с упаковкой)
+  weight_gross:
+    patterns:
+      - pattern: r'(?:вес\s+брутто|масса\s+брутто|брутто|вес\s+с\s+упаковкой)[\s:‑\-\/]*([\d\s,\.]+)'
+        priority: 10
+        context_keywords: ['брутто', 'с упаковкой']
+      - pattern: r'(?:общий\s+вес|полная\s+масса)[\s:‑\-\/]*([\d\s,\.]+)'
+        priority: 7
+        context_keywords: ['общий', 'полная']
+      - pattern: r'([\d\s,\.]+)\s*(?:кг|г|т|тонн)?\s*\(брутто\)'
+        priority: 8
+        context_keywords: ['брутто']
+    validate: 'float'
+  
+  # Вес НЕТТО (без упаковки)
+  weight_net:
+    patterns:
+      - pattern: r'(?:вес\s+нетто|масса\s+нетто|нетто|вес\s+товара|вес\s+без\s+упаковки)[\s:‑\-\/]*([\d\s,\.]+)'
+        priority: 10
+        context_keywords: ['нетто', 'без упаковки', 'товара']
+      - pattern: r'(?:чистый\s+вес|чистая\s+масса)[\s:‑\-\/]*([\d\s,\.]+)'
+        priority: 8
+        context_keywords: ['чистый', 'чистая']
+      - pattern: r'([\d\s,\.]+)\s*(?:кг|г|т|тонн)?\s*\(нетто\)'
+        priority: 8
+        context_keywords: ['нетто']
+    validate: 'float'
+  
+  # Общий вес (если не разделен на брутто/нетто)
+  total_weight:
+    patterns:
+      - pattern: r'(?:масса|вес|общая\s+масса|общий\s+вес)[\s:‑\-\/]*([\d\s,\.]+)'
+        priority: 8
+        context_keywords: ['масса', 'вес']
+      - pattern: r'(?:вес\s+груза|масса\s+груза)[\s:‑\-\/]*([\d\s,\.]+)'
+        priority: 7
+        context_keywords: ['груза']
+    validate: 'float'
   date:
     patterns:
       - pattern: r'(?:дата|от|дата\s+счета)[\s:‑\-\/]*(\d{1,2}[\.\s\/]\d{1,2}[\.\s\/]\d{4})'
@@ -766,8 +847,35 @@ field_patterns:
   basis_number:
     pattern: r'(?:основание|договор|счёт)[\s\w]*№?\s*[:\-]?\s*(\d+)'
     validate: 'digits'
+  # Вес БРУТТО для товарных накладных
+  weight_gross:
+    patterns:
+      - pattern: r'(?:вес\s+брутто|масса\s+брутто|брутто)[\s:‑\-\/]*([\d\s,\.]+)'
+        priority: 10
+        context_keywords: ['брутто']
+      - pattern: r'(?:общий\s+вес|полная\s+масса)[\s:‑\-\/]*([\d\s,\.]+)'
+        priority: 7
+        context_keywords: ['общий', 'полная']
+    validate: 'float'
+  # Вес НЕТТО для товарных накладных
+  weight_net:
+    patterns:
+      - pattern: r'(?:вес\s+нетто|масса\s+нетто|нетто|вес\s+товара)[\s:‑\-\/]*([\d\s,\.]+)'
+        priority: 10
+        context_keywords: ['нетто', 'товара']
+      - pattern: r'(?:чистый\s+вес|чистая\s+масса)[\s:‑\-\/]*([\d\s,\.]+)'
+        priority: 8
+        context_keywords: ['чистый', 'чистая']
+    validate: 'float'
+  # Общий вес (если не разделен)
   total_weight:
-    pattern: r'(?:масса|вес|общая\s+масса)[\s:‑\-\/]*([\d\s,\.]+)'
+    patterns:
+      - pattern: r'(?:масса|вес|общая\s+масса|общий\s+вес)[\s:‑\-\/]*([\d\s,\.]+)'
+        priority: 8
+        context_keywords: ['масса', 'вес']
+      - pattern: r'(?:вес\s+груза|масса\s+груза)[\s:‑\-\/]*([\d\s,\.]+)'
+        priority: 7
+        context_keywords: ['груза']
     validate: 'float'
   contract_number:
     pattern: r'договор\s*№?\s*[:\-]?\s*(\d+)'
