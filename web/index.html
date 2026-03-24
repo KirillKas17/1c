@@ -200,29 +200,89 @@
 
           <!-- Фильтры и поиск -->
           <div class="glass p-4 rounded-xl mb-6 flex-shrink-0">
-            <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
-              <input type="text" id="history-search" placeholder="Поиск по файлу, ИНН, контрагенту..." 
-                     class="bg-white/10 rounded-lg px-4 py-2 text-sm" onkeyup="handleHistorySearch()">
-              <select id="history-filter-type" class="bg-white/10 rounded-lg px-4 py-2 text-sm" onchange="loadHistory()">
-                <option value="">Все типы</option>
-              </select>
-              <select id="history-filter-status" class="bg-white/10 rounded-lg px-4 py-2 text-sm" onchange="loadHistory()">
-                <option value="">Все статусы</option>
-                <option value="success">Успешно</option>
-                <option value="partial">Частично</option>
-                <option value="error">Ошибка</option>
-              </select>
-              <select id="history-filter-contractor" class="bg-white/10 rounded-lg px-4 py-2 text-sm" onchange="loadHistory()">
-                <option value="">Все контрагенты</option>
-              </select>
-              <div class="flex gap-2">
-                <button onclick="loadHistory()" class="btn-gradient px-4 py-2 text-sm flex items-center gap-2">
-                  <i data-lucide="search" class="w-4 h-4"></i> Поиск
-                </button>
-                <button onclick="exportHistory()" class="bg-purple-500 hover:bg-purple-600 px-4 py-2 rounded-lg text-sm flex items-center gap-2">
-                  <i data-lucide="download" class="w-4 h-4"></i> Excel
-                </button>
+            <!-- Быстрые пресеты -->
+            <div class="flex gap-2 mb-4 flex-wrap">
+              <button onclick="applyPreset('today')" class="px-3 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/30 rounded-lg text-xs transition-all">
+                <i data-lucide="clock" class="w-3 h-3 inline mr-1"></i> Сегодня
+              </button>
+              <button onclick="applyPreset('week')" class="px-3 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/30 rounded-lg text-xs transition-all">
+                <i data-lucide="calendar" class="w-3 h-3 inline mr-1"></i> Неделя
+              </button>
+              <button onclick="applyPreset('month')" class="px-3 py-1.5 bg-green-500/20 hover:bg-green-500/30 border border-green-500/30 rounded-lg text-xs transition-all">
+                <i data-lucide="calendar-range" class="w-3 h-3 inline mr-1"></i> Месяц
+              </button>
+              <button onclick="applyPreset('errors')" class="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 rounded-lg text-xs transition-all">
+                <i data-lucide="alert-circle" class="w-3 h-3 inline mr-1"></i> Только ошибки
+              </button>
+              <button onclick="clearFilters()" class="px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg text-xs transition-all">
+                <i data-lucide="x" class="w-3 h-3 inline mr-1"></i> Сбросить всё
+              </button>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+              <div class="xl:col-span-2">
+                <input type="text" id="history-search" placeholder="🔍 Поиск по файлу, ИНН, контрагенту..." 
+                       class="w-full bg-white/10 rounded-lg px-4 py-2 text-sm" onkeyup="handleHistorySearch()">
               </div>
+              <div>
+                <select id="history-filter-type" class="w-full bg-white/10 rounded-lg px-4 py-2 text-sm" onchange="loadHistory()">
+                  <option value="">Все типы</option>
+                </select>
+              </div>
+              <div>
+                <select id="history-filter-status" class="w-full bg-white/10 rounded-lg px-4 py-2 text-sm" onchange="loadHistory()">
+                  <option value="">Все статусы</option>
+                  <option value="success">✅ Успешно</option>
+                  <option value="partial">⚠️ Частично</option>
+                  <option value="error">❌ Ошибка</option>
+                </select>
+              </div>
+              <div>
+                <select id="history-filter-contractor" class="w-full bg-white/10 rounded-lg px-4 py-2 text-sm" onchange="loadHistory()">
+                  <option value="">Все контрагенты</option>
+                </select>
+              </div>
+              <div>
+                <select id="history-sort-by" class="w-full bg-white/10 rounded-lg px-4 py-2 text-sm" onchange="loadHistory()">
+                  <option value="processed_at_desc">📅 По дате обработки (новые)</option>
+                  <option value="processed_at_asc">📅 По дате обработки (старые)</option>
+                  <option value="document_date_desc">📄 По дате документа (новые)</option>
+                  <option value="document_date_asc">📄 По дате документа (старые)</option>
+                  <option value="amount_desc">💰 По сумме (убывание)</option>
+                  <option value="amount_asc">💰 По сумме (возрастание)</option>
+                  <option value="filename_asc">📁 По имени (А-Я)</option>
+                  <option value="filename_desc">📁 По имени (Я-А)</option>
+                </select>
+              </div>
+            </div>
+            
+            <!-- Расширенные фильтры -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mt-4 pt-4 border-t border-white/10">
+              <div>
+                <label class="text-xs text-gray-400 block mb-1">📅 Дата с:</label>
+                <input type="date" id="history-date-from" class="w-full bg-white/10 rounded-lg px-3 py-1.5 text-sm" onchange="loadHistory()">
+              </div>
+              <div>
+                <label class="text-xs text-gray-400 block mb-1">📅 Дата по:</label>
+                <input type="date" id="history-date-to" class="w-full bg-white/10 rounded-lg px-3 py-1.5 text-sm" onchange="loadHistory()">
+              </div>
+              <div>
+                <label class="text-xs text-gray-400 block mb-1">💰 Сумма от:</label>
+                <input type="number" id="history-amount-from" placeholder="0" class="w-full bg-white/10 rounded-lg px-3 py-1.5 text-sm" onchange="loadHistory()">
+              </div>
+              <div>
+                <label class="text-xs text-gray-400 block mb-1">💰 Сумма до:</label>
+                <input type="number" id="history-amount-to" placeholder="∞" class="w-full bg-white/10 rounded-lg px-3 py-1.5 text-sm" onchange="loadHistory()">
+              </div>
+            </div>
+            
+            <div class="flex gap-2 mt-4 justify-end">
+              <button onclick="loadHistory()" class="btn-gradient px-6 py-2 text-sm flex items-center gap-2">
+                <i data-lucide="search" class="w-4 h-4"></i> Применить фильтры
+              </button>
+              <button onclick="exportHistory()" class="bg-purple-500 hover:bg-purple-600 px-4 py-2 rounded-lg text-sm flex items-center gap-2">
+                <i data-lucide="download" class="w-4 h-4"></i> Экспорт Excel
+              </button>
             </div>
           </div>
 
@@ -1213,12 +1273,22 @@
         const docType = document.getElementById('history-filter-type').value;
         const status = document.getElementById('history-filter-status').value;
         const contractor = document.getElementById('history-filter-contractor').value;
+        const sortBy = document.getElementById('history-sort-by').value;
+        const dateFrom = document.getElementById('history-date-from').value;
+        const dateTo = document.getElementById('history-date-to').value;
+        const amountFrom = document.getElementById('history-amount-from').value;
+        const amountTo = document.getElementById('history-amount-to').value;
 
         historyFilters = {};
         if (search) historyFilters.search = search;
         if (docType) historyFilters.document_type = docType;
         if (status) historyFilters.status = status;
         if (contractor) historyFilters.contractor_inn = contractor;
+        if (sortBy) historyFilters.sort_by = sortBy;
+        if (dateFrom) historyFilters.date_from = dateFrom;
+        if (dateTo) historyFilters.date_to = dateTo;
+        if (amountFrom) historyFilters.amount_from = parseFloat(amountFrom);
+        if (amountTo) historyFilters.amount_to = parseFloat(amountTo);
 
         const res = await eel.get_processing_history(historyPage, historyPerPage, JSON.stringify(historyFilters))();
         
@@ -1438,6 +1508,52 @@
         historyPage = 1;
         loadHistory();
       }, 500);
+    }
+
+    // Быстрые пресеты фильтров
+    function applyPreset(preset) {
+      clearFilters();
+      
+      const today = new Date();
+      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+      
+      switch(preset) {
+        case 'today':
+          document.getElementById('history-date-from').valueAsDate = today;
+          document.getElementById('history-date-to').valueAsDate = today;
+          break;
+        case 'week':
+          document.getElementById('history-date-from').valueAsDate = weekAgo;
+          document.getElementById('history-date-to').valueAsDate = today;
+          break;
+        case 'month':
+          document.getElementById('history-date-from').valueAsDate = monthAgo;
+          document.getElementById('history-date-to').valueAsDate = today;
+          break;
+        case 'errors':
+          document.getElementById('history-filter-status').value = 'error';
+          break;
+      }
+      
+      historyPage = 1;
+      loadHistory();
+    }
+
+    // Сброс всех фильтров
+    function clearFilters() {
+      document.getElementById('history-search').value = '';
+      document.getElementById('history-filter-type').value = '';
+      document.getElementById('history-filter-status').value = '';
+      document.getElementById('history-filter-contractor').value = '';
+      document.getElementById('history-sort-by').value = 'processed_at_desc';
+      document.getElementById('history-date-from').value = '';
+      document.getElementById('history-date-to').value = '';
+      document.getElementById('history-amount-from').value = '';
+      document.getElementById('history-amount-to').value = '';
+      
+      historyPage = 1;
+      loadHistory();
     }
 
     function formatAmount(amount) {

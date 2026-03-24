@@ -377,6 +377,10 @@ class ProcessingHistory:
                 - date_to: дата документа до
                 - processed_from: дата обработки с
                 - processed_to: дата обработки до
+                - amount_from: сумма от
+                - amount_to: сумма до
+                - sort_by: сортировка (processed_at_desc, processed_at_asc, document_date_desc, 
+                          document_date_asc, amount_desc, amount_asc, filename_asc, filename_desc)
         
         Returns:
             Словарь с записями и метаданными пагинации
@@ -433,7 +437,30 @@ class ProcessingHistory:
                 where_conditions.append("processed_at <= ?")
                 params.append(filters['processed_to'])
             
+            # Фильтр по сумме документа
+            if filters.get('amount_from') is not None:
+                where_conditions.append("total_amount >= ?")
+                params.append(float(filters['amount_from']))
+            
+            if filters.get('amount_to') is not None:
+                where_conditions.append("total_amount <= ?")
+                params.append(float(filters['amount_to']))
+            
             where_clause = " AND ".join(where_conditions) if where_conditions else "1=1"
+            
+            # Построение ORDER BY для сортировки
+            sort_by = filters.get('sort_by', 'processed_at_desc')
+            order_column_map = {
+                'processed_at_desc': 'processed_at DESC',
+                'processed_at_asc': 'processed_at ASC',
+                'document_date_desc': 'document_date DESC',
+                'document_date_asc': 'document_date ASC',
+                'amount_desc': 'total_amount DESC',
+                'amount_asc': 'total_amount ASC',
+                'filename_asc': 'original_filename ASC',
+                'filename_desc': 'original_filename DESC',
+            }
+            order_clause = order_column_map.get(sort_by, 'processed_at DESC')
             
             # Получаем общее количество записей
             cursor = self.conn.cursor()
@@ -444,7 +471,7 @@ class ProcessingHistory:
             cursor.execute(f"""
                 SELECT * FROM documents 
                 WHERE {where_clause}
-                ORDER BY processed_at DESC
+                ORDER BY {order_clause}
                 LIMIT ? OFFSET ?
             """, params + [per_page, offset])
             
