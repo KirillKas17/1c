@@ -39,7 +39,7 @@ class GlobalErrorHandler:
         
         # Логирование в зависимости от типа ошибки
         if isinstance(error, DashboardBaseError):
-            log_warning(str(error), extra={"error_code": error.error_code, **(context or {})})
+            log_warning(f"{error.error_code}: {str(error)}", context={"hint": error.hint, **(context or {})})
             return {
                 "success": False,
                 "error_code": error.error_code,
