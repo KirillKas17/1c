@@ -299,11 +299,11 @@ class MappingLearner:
         
         try:
             # Общее количество сигнатур
-            cursor.execute("SELECT COUNT(*) FROM file_signatures")
+            cursor.execute("SELECT COUNT(*) as cnt FROM file_signatures")
             total_signatures = cursor.fetchone()[0]
             
             # Количество уникальных маппингов
-            cursor.execute("SELECT COUNT(DISTINCT signature_id, source_column) FROM mappings")
+            cursor.execute("SELECT COUNT(DISTINCT signature_id || source_column) FROM mappings")
             unique_mappings = cursor.fetchone()[0]
             
             # Средняя точность (процент авто-применений)
