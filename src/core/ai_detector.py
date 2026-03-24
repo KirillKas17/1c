@@ -125,8 +125,10 @@ class AIDetector:
         Уровень 1: Детекция по словарю синонимов
         
         Сопоставляет название колонки с известными полями из FIELD_MAPPINGS
+        Улучшено: поддержка составных слов, частичных совпадений, транслитерации
         """
         col_name_normalized = self._normalize_column_name(col_name)
+        col_name_parts = set(col_name_normalized.split())
         
         best_match = None
         best_confidence = 0.0
@@ -136,6 +138,7 @@ class AIDetector:
             
             for synonym in synonyms:
                 synonym_normalized = self._normalize_column_name(synonym)
+                synonym_parts = set(synonym_normalized.split())
                 
                 # Точное совпадение
                 if col_name_normalized == synonym_normalized:
@@ -150,9 +153,25 @@ class AIDetector:
                         metadata={"matched_synonym": synonym}
                     )
                 
-                # Частичное совпадение (содержит синоним)
-                if synonym_normalized in col_name_normalized or col_name_normalized in synonym_normalized:
-                    confidence = 0.85 * (len(synonym_normalized) / len(col_name_normalized))
+                # Совпадение по всем частям слова (для составных названий)
+                if synonym_parts and synonym_parts == col_name_parts:
+                    return ColumnMapping(
+                        original_name=col_name,
+                        mapped_field=field_id,
+                        confidence=0.95,
+                        detection_level=DetectionLevel.DICTIONARY,
+                        data_type=field_config.get("data_type", "string"),
+                        aggregation=field_config.get("aggregation"),
+                        unit=field_config.get("unit"),
+                        metadata={"matched_synonym": synonym, "match_type": "parts_exact"}
+                    )
+                
+                # Частичное совпадение (содержит ключевую часть синонима)
+                common_parts = synonym_parts & col_name_parts
+                if len(common_parts) >= 1 and len(synonym_parts) <= 3:
+                    # Вычисляем уверенность на основе покрытия
+                    coverage = len(common_parts) / max(len(synonym_parts), 1)
+                    confidence = 0.75 + (coverage * 0.20)  # 0.75 - 0.95
                     
                     if confidence > best_confidence:
                         best_confidence = confidence
@@ -164,10 +183,35 @@ class AIDetector:
                             data_type=field_config.get("data_type", "string"),
                             aggregation=field_config.get("aggregation"),
                             unit=field_config.get("unit"),
-                            metadata={"matched_synonym": synonym, "match_type": "partial"}
+                            metadata={
+                                "matched_synonym": synonym,
+                                "match_type": "partial_parts",
+                                "common_parts": list(common_parts)
+                            }
+                        )
+                
+                # Проверка на вхождение одного в другое (для длинных названий)
+                if len(synonym_normalized) >= 4 and (
+                    synonym_normalized in col_name_normalized or 
+                    col_name_normalized in synonym_normalized
+                ):
+                    confidence = 0.80 * (len(synonym_normalized) / max(len(col_name_normalized), 1))
+                    confidence = min(confidence, 0.90)
+                    
+                    if confidence > best_confidence:
+                        best_confidence = confidence
+                        best_match = ColumnMapping(
+                            original_name=col_name,
+                            mapped_field=field_id,
+                            confidence=confidence,
+                            detection_level=DetectionLevel.DICTIONARY,
+                            data_type=field_config.get("data_type", "string"),
+                            aggregation=field_config.get("aggregation"),
+                            unit=field_config.get("unit"),
+                            metadata={"matched_synonym": synonym, "match_type": "substring"}
                         )
         
-        return best_match if best_confidence >= 0.7 else None
+        return best_match if best_confidence >= 0.65 else None
     
     def _detect_by_heuristics(self, col_name: str, sample_values: List) -> Optional[ColumnMapping]:
         """
@@ -177,65 +221,168 @@ class AIDetector:
         - Формат данных (дата, число, строка)
         - Паттерны названий (регистр, специальные символы)
         - Иерархии по отступам/нумерации
+        - Сложные составные названия
+        - Контекстные подсказки в названии
         """
         col_name_normalized = self._normalize_column_name(col_name)
+        col_name_lower = col_name_normalized.lower()
         
-        # Эвристика: Дата
+        # Эвристика: Дата (приоритетная проверка)
         if self._is_date_column(sample_values):
             return ColumnMapping(
                 original_name=col_name,
                 mapped_field="date",
-                confidence=0.85,
+                confidence=0.90,
                 detection_level=DetectionLevel.HEURISTIC,
                 data_type="datetime",
                 metadata={"detected_format": self._detect_date_format(sample_values)}
             )
         
-        # Эвристика: Выручка/Сумма (число с большими значениями)
-        if self._is_revenue_column(col_name_normalized, sample_values):
+        # Эвристика: Выручка/Сумма (число с большими значениями + ключевые слова)
+        revenue_match = self._is_revenue_column(col_name_lower, sample_values)
+        if revenue_match['is_match']:
             return ColumnMapping(
                 original_name=col_name,
                 mapped_field="revenue",
-                confidence=0.75,
+                confidence=revenue_match['confidence'],
                 detection_level=DetectionLevel.HEURISTIC,
                 data_type="float",
                 aggregation="sum",
                 unit="RUB",
-                metadata={"heuristic": "revenue_pattern"}
+                metadata={"heuristic": "revenue_pattern", "matched_keywords": revenue_match.get('keywords', [])}
             )
         
-        # Эвристика: Количество (целые числа)
-        if self._is_quantity_column(col_name_normalized, sample_values):
+        # Эвристика: Себестоимость/Затраты
+        cost_match = self._is_cost_column(col_name_lower, sample_values)
+        if cost_match['is_match']:
+            return ColumnMapping(
+                original_name=col_name,
+                mapped_field="cost",
+                confidence=cost_match['confidence'],
+                detection_level=DetectionLevel.HEURISTIC,
+                data_type="float",
+                aggregation="sum",
+                unit="RUB",
+                metadata={"heuristic": "cost_pattern", "matched_keywords": cost_match.get('keywords', [])}
+            )
+        
+        # Эвристика: Прибыль/Маржа
+        profit_match = self._is_profit_column(col_name_lower, sample_values)
+        if profit_match['is_match']:
+            return ColumnMapping(
+                original_name=col_name,
+                mapped_field="profit",
+                confidence=profit_match['confidence'],
+                detection_level=DetectionLevel.HEURISTIC,
+                data_type="float",
+                aggregation="sum",
+                unit="RUB",
+                metadata={"heuristic": "profit_pattern", "matched_keywords": profit_match.get('keywords', [])}
+            )
+        
+        # Эвристика: Количество (целые числа + ключевые слова)
+        quantity_match = self._is_quantity_column(col_name_lower, sample_values)
+        if quantity_match['is_match']:
             return ColumnMapping(
                 original_name=col_name,
                 mapped_field="quantity",
-                confidence=0.75,
+                confidence=quantity_match['confidence'],
                 detection_level=DetectionLevel.HEURISTIC,
-                data_type="int",
+                data_type="float",
                 aggregation="sum",
-                metadata={"heuristic": "quantity_pattern"}
+                metadata={"heuristic": "quantity_pattern", "matched_keywords": quantity_match.get('keywords', [])}
+            )
+        
+        # Эвристика: Цена
+        price_match = self._is_price_column(col_name_lower, sample_values)
+        if price_match['is_match']:
+            return ColumnMapping(
+                original_name=col_name,
+                mapped_field="price",
+                confidence=price_match['confidence'],
+                detection_level=DetectionLevel.HEURISTIC,
+                data_type="float",
+                aggregation="avg",
+                unit="RUB",
+                metadata={"heuristic": "price_pattern", "matched_keywords": price_match.get('keywords', [])}
             )
         
         # Эвристика: Клиент/Контрагент
-        if self._is_customer_column(col_name_normalized):
+        customer_match = self._is_customer_column(col_name_lower, sample_values)
+        if customer_match['is_match']:
             return ColumnMapping(
                 original_name=col_name,
                 mapped_field="customer",
-                confidence=0.70,
+                confidence=customer_match['confidence'],
                 detection_level=DetectionLevel.HEURISTIC,
                 data_type="string",
-                metadata={"heuristic": "customer_pattern"}
+                aggregation="count_distinct",
+                metadata={"heuristic": "customer_pattern", "matched_keywords": customer_match.get('keywords', [])}
             )
         
         # Эвристика: Товар/Номенклатура
-        if self._is_product_column(col_name_normalized):
+        product_match = self._is_product_column(col_name_lower, sample_values)
+        if product_match['is_match']:
             return ColumnMapping(
                 original_name=col_name,
                 mapped_field="product",
-                confidence=0.70,
+                confidence=product_match['confidence'],
                 detection_level=DetectionLevel.HEURISTIC,
                 data_type="string",
-                metadata={"heuristic": "product_pattern"}
+                aggregation="count_distinct",
+                metadata={"heuristic": "product_pattern", "matched_keywords": product_match.get('keywords', [])}
+            )
+        
+        # Эвристика: Категория/Группа
+        category_match = self._is_category_column(col_name_lower, sample_values)
+        if category_match['is_match']:
+            return ColumnMapping(
+                original_name=col_name,
+                mapped_field="category",
+                confidence=category_match['confidence'],
+                detection_level=DetectionLevel.HEURISTIC,
+                data_type="string",
+                aggregation="count_distinct",
+                metadata={"heuristic": "category_pattern", "matched_keywords": category_match.get('keywords', [])}
+            )
+        
+        # Эвристика: Менеджер/Ответственный
+        manager_match = self._is_manager_column(col_name_lower, sample_values)
+        if manager_match['is_match']:
+            return ColumnMapping(
+                original_name=col_name,
+                mapped_field="manager",
+                confidence=manager_match['confidence'],
+                detection_level=DetectionLevel.HEURISTIC,
+                data_type="string",
+                aggregation="count_distinct",
+                metadata={"heuristic": "manager_pattern", "matched_keywords": manager_match.get('keywords', [])}
+            )
+        
+        # Эвристика: Регион/Город
+        region_match = self._is_region_column(col_name_lower, sample_values)
+        if region_match['is_match']:
+            return ColumnMapping(
+                original_name=col_name,
+                mapped_field="region",
+                confidence=region_match['confidence'],
+                detection_level=DetectionLevel.HEURISTIC,
+                data_type="string",
+                aggregation="count_distinct",
+                metadata={"heuristic": "region_pattern", "matched_keywords": region_match.get('keywords', [])}
+            )
+        
+        # Эвристика: Документ/Номер
+        document_match = self._is_document_column(col_name_lower, sample_values)
+        if document_match['is_match']:
+            return ColumnMapping(
+                original_name=col_name,
+                mapped_field="document_number",
+                confidence=document_match['confidence'],
+                detection_level=DetectionLevel.HEURISTIC,
+                data_type="string",
+                aggregation="count",
+                metadata={"heuristic": "document_pattern", "matched_keywords": document_match.get('keywords', [])}
             )
         
         return None
@@ -377,11 +524,13 @@ class AIDetector:
         
         return None
     
-    def _is_revenue_column(self, col_name: str, values: List) -> bool:
-        """Проверить, является ли колонка выручкой"""
-        revenue_keywords = ["сумм", "выручк", "оборот", "продаж", "доход"]
+    def _is_revenue_column(self, col_name: str, values: List) -> Dict:
+        """Проверить, является ли колонка выручкой. Возвращает dict с результатом и деталями."""
+        revenue_keywords = ["сумм", "выручк", "оборот", "продаж", "доход", "поступлен", "реализац"]
         
-        if any(keyword in col_name for keyword in revenue_keywords):
+        matched_keywords = [kw for kw in revenue_keywords if kw in col_name]
+        
+        if matched_keywords:
             # Проверка на большие числовые значения
             numeric_values = []
             for val in values[:10]:
@@ -393,41 +542,211 @@ class AIDetector:
                     except ValueError:
                         pass
             
-            if len(numeric_values) > 3:
-                return True
+            if len(numeric_values) >= 2:
+                confidence = min(0.75 + (len(numeric_values) / 10) * 0.20, 0.95)
+                return {"is_match": True, "confidence": confidence, "keywords": matched_keywords}
         
-        return False
+        return {"is_match": False, "confidence": 0.0, "keywords": []}
     
-    def _is_quantity_column(self, col_name: str, values: List) -> bool:
-        """Проверить, является ли колонка количеством"""
-        quantity_keywords = ["кол", "колич", "штук", "вес", "объем"]
+    def _is_cost_column(self, col_name: str, values: List) -> Dict:
+        """Проверить, является ли колонка себестоимостью/затратами."""
+        cost_keywords = ["себестоим", "затрат", "покупк", "расход", "cost", "закупк", "издержк"]
         
-        if any(keyword in col_name for keyword in quantity_keywords):
-            # Проверка на целые положительные числа
-            int_count = 0
+        matched_keywords = [kw for kw in cost_keywords if kw in col_name]
+        
+        if matched_keywords:
+            numeric_values = []
             for val in values[:10]:
                 if val and str(val).strip():
                     try:
                         num = float(str(val).replace(',', '.').replace(' ', ''))
-                        if num > 0 and num.is_integer() and num < 100000:
+                        if num > 0:
+                            numeric_values.append(num)
+                    except ValueError:
+                        pass
+            
+            if len(numeric_values) >= 2:
+                confidence = min(0.70 + (len(numeric_values) / 10) * 0.25, 0.95)
+                return {"is_match": True, "confidence": confidence, "keywords": matched_keywords}
+        
+        return {"is_match": False, "confidence": 0.0, "keywords": []}
+    
+    def _is_profit_column(self, col_name: str, values: List) -> Dict:
+        """Проверить, является ли колонка прибылью."""
+        profit_keywords = ["прибыл", "марж", "profit", "результат", "доход"]
+        
+        matched_keywords = [kw for kw in profit_keywords if kw in col_name]
+        
+        if matched_keywords:
+            numeric_values = []
+            for val in values[:10]:
+                if val and str(val).strip():
+                    try:
+                        num = float(str(val).replace(',', '.').replace(' ', ''))
+                        numeric_values.append(num)
+                    except ValueError:
+                        pass
+            
+            if len(numeric_values) >= 2:
+                confidence = min(0.75 + (len(numeric_values) / 10) * 0.20, 0.95)
+                return {"is_match": True, "confidence": confidence, "keywords": matched_keywords}
+        
+        return {"is_match": False, "confidence": 0.0, "keywords": []}
+    
+    def _is_quantity_column(self, col_name: str, values: List) -> Dict:
+        """Проверить, является ли колонка количеством."""
+        quantity_keywords = ["кол", "колич", "штук", "вес", "объем", "volume", "weight", "units", "pcs", "м3", "кг", "тонн", "литр"]
+        
+        matched_keywords = [kw for kw in quantity_keywords if kw in col_name]
+        
+        # Проверяем только по ключевым словам в названии для "вес" и "объем"
+        weight_volume_keywords = ["вес", "объем", "volume", "weight", "м3", "кг", "тонн", "литр"]
+        is_weight_volume = any(kw in col_name for kw in weight_volume_keywords)
+        
+        if matched_keywords:
+            int_count = 0
+            positive_count = 0
+            for val in values[:10]:
+                if val and str(val).strip():
+                    try:
+                        num = float(str(val).replace(',', '.').replace(' ', ''))
+                        if num > 0:
+                            positive_count += 1
+                        # Для веса/объема допускаем дробные числа
+                        if is_weight_volume:
+                            if num < 10000000:
+                                int_count += 1
+                        elif num.is_integer() and num < 1000000:
                             int_count += 1
                     except ValueError:
                         pass
             
-            if int_count > 5:
-                return True
+            # Для веса/объема достаточно положительных чисел
+            if is_weight_volume:
+                if positive_count >= 3:
+                    confidence = min(0.70 + (positive_count / 10) * 0.25, 0.95)
+                    return {"is_match": True, "confidence": confidence, "keywords": matched_keywords}
+            elif int_count >= 4 or (matched_keywords and positive_count >= 5):
+                confidence = min(0.70 + (int_count / 10) * 0.25, 0.95)
+                return {"is_match": True, "confidence": confidence, "keywords": matched_keywords}
         
-        return False
+        return {"is_match": False, "confidence": 0.0, "keywords": []}
     
-    def _is_customer_column(self, col_name: str) -> bool:
-        """Проверить, является ли колонка клиентом"""
-        customer_keywords = ["клиент", "контрагент", "покупатель", "заказчик", "организация", "компания"]
-        return any(keyword in col_name for keyword in customer_keywords)
+    def _is_price_column(self, col_name: str, values: List) -> Dict:
+        """Проверить, является ли колонка ценой."""
+        price_keywords = ["цена", "price", "тариф", "ставка", "стоимость"]
+        
+        matched_keywords = [kw for kw in price_keywords if kw in col_name]
+        
+        if matched_keywords:
+            numeric_values = []
+            for val in values[:10]:
+                if val and str(val).strip():
+                    try:
+                        num = float(str(val).replace(',', '.').replace(' ', ''))
+                        if num > 0 and num < 10000000:  # Цена обычно в разумных пределах
+                            numeric_values.append(num)
+                    except ValueError:
+                        pass
+            
+            if len(numeric_values) >= 3:
+                confidence = min(0.75 + (len(numeric_values) / 10) * 0.20, 0.95)
+                return {"is_match": True, "confidence": confidence, "keywords": matched_keywords}
+        
+        return {"is_match": False, "confidence": 0.0, "keywords": []}
     
-    def _is_product_column(self, col_name: str) -> bool:
-        """Проверить, является ли колонка товаром"""
-        product_keywords = ["товар", "продукт", "номенклатур", "артикул", "наименован", "категор"]
-        return any(keyword in col_name for keyword in product_keywords)
+    def _is_customer_column(self, col_name: str, values: List) -> Dict:
+        """Проверить, является ли колонка клиентом."""
+        customer_keywords = ["клиент", "контрагент", "покупатель", "заказчик", "организация", "компания", "customer", "client", "buyer", "partner", "дебитор"]
+        
+        matched_keywords = [kw for kw in customer_keywords if kw in col_name]
+        
+        if matched_keywords:
+            # Проверяем, что значения - строки (названия организаций)
+            string_count = sum(1 for v in values[:10] if v and isinstance(v, str) and len(v.strip()) > 3)
+            
+            if string_count >= 3 or len(matched_keywords) >= 2:
+                confidence = min(0.65 + (string_count / 10) * 0.30, 0.95)
+                return {"is_match": True, "confidence": confidence, "keywords": matched_keywords}
+        
+        return {"is_match": False, "confidence": 0.0, "keywords": []}
+    
+    def _is_product_column(self, col_name: str, values: List) -> Dict:
+        """Проверить, является ли колонка товаром."""
+        product_keywords = ["товар", "продукт", "номенклатур", "артикул", "наименован", "категор", "product", "item", "sku", "material", "услуг", "работ"]
+        
+        matched_keywords = [kw for kw in product_keywords if kw in col_name]
+        
+        if matched_keywords:
+            # Проверяем, что значения - строки (названия товаров)
+            string_count = sum(1 for v in values[:10] if v and isinstance(v, str) and len(v.strip()) > 2)
+            
+            if string_count >= 3 or len(matched_keywords) >= 2:
+                confidence = min(0.65 + (string_count / 10) * 0.30, 0.95)
+                return {"is_match": True, "confidence": confidence, "keywords": matched_keywords}
+        
+        return {"is_match": False, "confidence": 0.0, "keywords": []}
+    
+    def _is_category_column(self, col_name: str, values: List) -> Dict:
+        """Проверить, является ли колонка категорией/группой."""
+        category_keywords = ["категор", "групп", "раздел", "вид", "тип", "category", "group", "department", "family", "class", "подразделен"]
+        
+        matched_keywords = [kw for kw in category_keywords if kw in col_name]
+        
+        if matched_keywords:
+            string_count = sum(1 for v in values[:10] if v and isinstance(v, str) and len(v.strip()) > 2)
+            
+            if string_count >= 3 or len(matched_keywords) >= 1:
+                confidence = min(0.65 + (string_count / 10) * 0.30, 0.90)
+                return {"is_match": True, "confidence": confidence, "keywords": matched_keywords}
+        
+        return {"is_match": False, "confidence": 0.0, "keywords": []}
+    
+    def _is_manager_column(self, col_name: str, values: List) -> Dict:
+        """Проверить, является ли колонка менеджером."""
+        manager_keywords = ["менеджер", "ответствен", "manager", "sales", "сотрудник", "employee", "представител", "agent", "консультант", "директор", "руковод"]
+        
+        matched_keywords = [kw for kw in manager_keywords if kw in col_name]
+        
+        if matched_keywords:
+            string_count = sum(1 for v in values[:10] if v and isinstance(v, str) and len(v.strip()) > 3)
+            
+            if string_count >= 3 or len(matched_keywords) >= 1:
+                confidence = min(0.65 + (string_count / 10) * 0.30, 0.90)
+                return {"is_match": True, "confidence": confidence, "keywords": matched_keywords}
+        
+        return {"is_match": False, "confidence": 0.0, "keywords": []}
+    
+    def _is_region_column(self, col_name: str, values: List) -> Dict:
+        """Проверить, является ли колонка регионом/городом."""
+        region_keywords = ["регион", "област", "край", "город", "country", "стран", "федеральн", "округ", "территор", "district", "city", "town"]
+        
+        matched_keywords = [kw for kw in region_keywords if kw in col_name]
+        
+        if matched_keywords:
+            string_count = sum(1 for v in values[:10] if v and isinstance(v, str) and len(v.strip()) > 2)
+            
+            if string_count >= 3 or len(matched_keywords) >= 1:
+                confidence = min(0.65 + (string_count / 10) * 0.30, 0.90)
+                return {"is_match": True, "confidence": confidence, "keywords": matched_keywords}
+        
+        return {"is_match": False, "confidence": 0.0, "keywords": []}
+    
+    def _is_document_column(self, col_name: str, values: List) -> Dict:
+        """Проверить, является ли колонка документом/номером."""
+        document_keywords = ["номер", "document", "doc", "счет", "invoice", "order", "заказ", "акт", "накладн", "платеж", "transaction"]
+        
+        matched_keywords = [kw for kw in document_keywords if kw in col_name]
+        
+        if matched_keywords:
+            # Документы могут быть строками или числами
+            non_empty_count = sum(1 for v in values[:10] if v and str(v).strip())
+            
+            if non_empty_count >= 3 or len(matched_keywords) >= 1:
+                confidence = min(0.65 + (non_empty_count / 10) * 0.30, 0.90)
+                return {"is_match": True, "confidence": confidence, "keywords": matched_keywords}
+        
+        return {"is_match": False, "confidence": 0.0, "keywords": []}
     
     def _detect_numbering_hierarchy(self, column_names: List[str]) -> Optional[HierarchyInfo]:
         """Обнаружить иерархию по нумерации"""
