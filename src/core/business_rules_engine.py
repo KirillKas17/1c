@@ -70,6 +70,11 @@ class BusinessRulesEngine:
         """Calculate all applicable rules."""
         self.results = []
         
+        # Проверка на пустой DataFrame
+        if len(self.df) == 0:
+            print("Warning: Empty dataframe, no calculations possible")
+            return self.results
+        
         # Finance
         self._calc_revenue()
         self._calc_cost()
@@ -149,7 +154,15 @@ class BusinessRulesEngine:
 
     def _calc_cost(self):
         col = self._get_col('cost')
-        if not col: return
+        if not col: 
+            # Пытаемся найти альтернативные названия
+            alt_cols = ['Себестоимость', 'Затраты', 'СуммаПокупки', 'ЗакупочнаяЦена']
+            for alt in alt_cols:
+                if alt in self.df.columns:
+                    col = alt
+                    break
+        if not col: 
+            return
         
         value = self.df[col].sum()
         self.results.append(RuleResult(
@@ -534,8 +547,18 @@ class BusinessRulesEngine:
         prod_col = self._get_col('product')
         rev_col = self._get_col('revenue')
         if not prod_col or not rev_col: return
+        if prod_col not in self.df.columns or rev_col not in self.df.columns: return
+        
+        # Проверяем, есть ли данные для группировки
+        if len(self.df) == 0:
+            return
         
         grouped = self.df.groupby(prod_col)[rev_col].sum().sort_values(ascending=False)
+        
+        # Проверяем, что есть хотя бы один товар
+        if len(grouped) == 0 or grouped.sum() == 0:
+            return
+            
         total = grouped.sum()
         cum_pct = grouped.cumsum() / total
         
@@ -788,7 +811,20 @@ class BusinessRulesEngine:
         if not price_col or not qty_col: return
         if price_col not in self.df.columns or qty_col not in self.df.columns: return
         
-        corr, p_value = stats.pearsonr(self.df[price_col].dropna(), self.df[qty_col].dropna())
+        # Очищаем данные от NaN и проверяем длину
+        price_data = self.df[price_col].dropna()
+        qty_data = self.df[qty_col].dropna()
+        
+        # Нужно минимум 2 точки для корреляции
+        if len(price_data) < 2 or len(qty_data) < 2:
+            return
+        
+        # Выравниваем индексы
+        common_idx = price_data.index.intersection(qty_data.index)
+        if len(common_idx) < 2:
+            return
+            
+        corr, p_value = stats.pearsonr(price_data.loc[common_idx], qty_data.loc[common_idx])
         
         self.results.append(RuleResult(
             rule_id='price_elasticity',
@@ -807,7 +843,20 @@ class BusinessRulesEngine:
         if not rev_col or not cost_col: return
         if rev_col not in self.df.columns or cost_col not in self.df.columns: return
         
-        corr, _ = stats.pearsonr(self.df[rev_col].dropna(), self.df[cost_col].dropna())
+        # Очищаем данные от NaN и проверяем длину
+        rev_data = self.df[rev_col].dropna()
+        cost_data = self.df[cost_col].dropna()
+        
+        # Нужно минимум 2 точки для корреляции
+        if len(rev_data) < 2 or len(cost_data) < 2:
+            return
+        
+        # Выравниваем индексы
+        common_idx = rev_data.index.intersection(cost_data.index)
+        if len(common_idx) < 2:
+            return
+            
+        corr, _ = stats.pearsonr(rev_data.loc[common_idx], cost_data.loc[common_idx])
         
         self.results.append(RuleResult(
             rule_id='rev_cost_corr',
@@ -823,8 +872,22 @@ class BusinessRulesEngine:
         price_col = self._get_col('price')
         
         if not qty_col or not price_col: return
+        if qty_col not in self.df.columns or price_col not in self.df.columns: return
         
-        corr, _ = stats.pearsonr(self.df[qty_col].dropna(), self.df[price_col].dropna())
+        # Очищаем данные от NaN и проверяем длину
+        qty_data = self.df[qty_col].dropna()
+        price_data = self.df[price_col].dropna()
+        
+        # Нужно минимум 2 точки для корреляции
+        if len(qty_data) < 2 or len(price_data) < 2:
+            return
+        
+        # Выравниваем индексы
+        common_idx = qty_data.index.intersection(price_data.index)
+        if len(common_idx) < 2:
+            return
+            
+        corr, _ = stats.pearsonr(qty_data.loc[common_idx], price_data.loc[common_idx])
         self.results.append(RuleResult(
             rule_id='vol_price_corr',
             name='Корреляция Объем-Цена',
