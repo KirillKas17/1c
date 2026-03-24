@@ -41,27 +41,245 @@
     @keyframes scaleIn { from { transform: scale(0.9); opacity: 0; } to { transform: scale(1); opacity: 1; } }
     .toast-enter { animation: slideInFromRight 0.3s ease-out; }
     .modal-enter { animation: scaleIn 0.3s ease-out; }
+    
+    /* Мобильное меню */
+    .mobile-menu-btn { display: none; }
+    .sidebar-overlay { display: none; }
+    
     /* Адаптивная сетка карточек */
     #document-cards {
       grid-template-rows: repeat(auto-fit, minmax(400px, 1fr));
     }
+    
+    /* Планшеты и меньше */
     @media (max-width: 1024px) {
       #document-cards {
         grid-template-rows: repeat(auto-fit, minmax(350px, 1fr));
       }
+      .history-table-container {
+        overflow-x: auto;
+      }
+      .history-table {
+        min-width: 800px;
+      }
     }
+    
+    /* Мобильные устройства */
     @media (max-width: 768px) {
       #document-cards {
         grid-template-rows: repeat(auto-fit, minmax(300px, 1fr));
+      }
+      
+      /* Показываем кнопку мобильного меню */
+      .mobile-menu-btn {
+        display: flex !important;
+        align-items: center;
+        justify-content: center;
+        padding: 8px;
+        border-radius: 8px;
+        background: rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.2);
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+      .mobile-menu-btn:hover {
+        background: rgba(255,255,255,0.2);
+      }
+      
+      /* Скрываем сайдбар по умолчанию на мобильных */
+      .sidebar {
+        position: fixed;
+        left: -100%;
+        top: 0;
+        height: 100vh;
+        width: 280px;
+        z-index: 1000;
+        transition: left 0.3s ease;
+        overflow-y: auto;
+      }
+      
+      .sidebar.open {
+        left: 0;
+      }
+      
+      /* Оверлей для затемнения фона */
+      .sidebar-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.7);
+        z-index: 999;
+        backdrop-filter: blur(4px);
+      }
+      
+      .sidebar-overlay.active {
+        display: block;
+      }
+      
+      /* Основная область на всю ширину */
+      .main-content {
+        margin-left: 0 !important;
+        width: 100%;
+      }
+      
+      /* Адаптация заголовков */
+      h1 {
+        font-size: 1.5rem !important;
+      }
+      h2 {
+        font-size: 1.25rem !important;
+      }
+      h3 {
+        font-size: 1.1rem !important;
+      }
+      
+      /* Уменьшенные отступы */
+      .glass {
+        padding: 1rem !important;
+        border-radius: 12px !important;
+      }
+      
+      .p-8 {
+        padding: 1rem !important;
+      }
+      
+      .p-6 {
+        padding: 0.75rem !important;
+      }
+      
+      .p-4 {
+        padding: 0.5rem !important;
+      }
+      
+      .p-3 {
+        padding: 0.5rem !important;
+      }
+      
+      /* Адаптация кнопок */
+      .btn-gradient {
+        padding: 10px 16px !important;
+        font-size: 0.875rem;
+      }
+      
+      /* Скрываем текст кнопок навигации, оставляем только иконки */
+      .sidebar-item span:not(.icon-only) {
+        display: none;
+      }
+      
+      .sidebar-item {
+        justify-content: center;
+        padding: 0.75rem !important;
+      }
+      
+      /* Адаптация статистики */
+      #history-stats {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 0.5rem !important;
+      }
+      
+      #history-stats .text-2xl {
+        font-size: 1.5rem !important;
+      }
+      
+      /* Адаптация фильтров */
+      .filter-grid {
+        grid-template-columns: 1fr !important;
+      }
+      
+      .filter-presets {
+        flex-wrap: wrap;
+        gap: 0.5rem !important;
+      }
+      
+      .filter-presets button {
+        flex: 1 1 auto;
+        min-width: calc(50% - 0.25rem);
+        font-size: 0.75rem;
+        padding: 0.5rem 0.75rem !important;
+      }
+      
+      /* Адаптация таблицы */
+      .table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      
+      table {
+        font-size: 0.75rem;
+      }
+      
+      th, td {
+        padding: 0.5rem !important;
+        white-space: nowrap;
+      }
+      
+      /* Скрываем менее важные колонки на мобильных */
+      .hide-mobile {
+        display: none;
+      }
+      
+      /* Адаптация модальных окон */
+      .modal-content {
+        max-height: 90vh;
+        overflow-y: auto;
+        margin: 1rem;
+      }
+      
+      /* Улучшение тач-интерфейса */
+      button, select, input {
+        min-height: 44px;
+        touch-action: manipulation;
+      }
+      
+      /* Предотвращение горизонтального скролла страницы */
+      body {
+        overflow-x: hidden;
+      }
+    }
+    
+    /* Очень маленькие экраны */
+    @media (max-width: 375px) {
+      .sidebar {
+        width: 260px;
+      }
+      
+      .filter-presets button {
+        min-width: 100%;
+      }
+      
+      #history-stats {
+        grid-template-columns: 1fr !important;
+      }
+    }
+    
+    /* Пейзажная ориентация на мобильных */
+    @media (max-width: 768px) and (orientation: landscape) {
+      .sidebar {
+        width: 240px;
+      }
+      
+      h1 {
+        font-size: 1.25rem !important;
       }
     }
   </style>
 </head>
 <body class="h-full text-gray-100 overflow-hidden">
 
+  <!-- Оверлей для мобильного меню -->
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleMobileMenu()"></div>
+
   <div class="flex h-full">
+    <!-- Кнопка мобильного меню (видна только на мобильных) -->
+    <button class="mobile-menu-btn fixed top-4 left-4 z-[1001] md:hidden" onclick="toggleMobileMenu()" style="display: none;">
+      <i data-lucide="menu" class="w-6 h-6"></i>
+    </button>
+
     <!-- Левая панель (VSCode-style) -->
-    <aside class="w-72 glass p-6 space-y-8">
+    <aside class="sidebar w-72 glass p-6 space-y-8">
       <div class="flex items-center gap-3">
         <i data-lucide="zap" class="w-9 h-9 text-cyan-400"></i>
         <h1 class="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-purple-400">
@@ -107,7 +325,7 @@
     </aside>
 
     <!-- Основная область -->
-    <main class="flex-1 p-6 overflow-hidden flex flex-col">
+    <main class="main-content flex-1 p-6 overflow-hidden flex flex-col">
       <!-- Вкладка Загрузка -->
       <div id="content-upload" class="tab-content flex flex-col h-full min-h-0">
         <div class="glass p-8 rounded-2xl fade-in flex flex-col h-full min-h-0">
@@ -201,7 +419,7 @@
           <!-- Фильтры и поиск -->
           <div class="glass p-4 rounded-xl mb-6 flex-shrink-0">
             <!-- Быстрые пресеты -->
-            <div class="flex gap-2 mb-4 flex-wrap">
+            <div class="filter-presets flex gap-2 mb-4 flex-wrap">
               <button onclick="applyPreset('today')" class="px-3 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/30 rounded-lg text-xs transition-all">
                 <i data-lucide="clock" class="w-3 h-3 inline mr-1"></i> Сегодня
               </button>
@@ -219,7 +437,7 @@
               </button>
             </div>
             
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+            <div class="filter-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
               <div class="xl:col-span-2">
                 <input type="text" id="history-search" placeholder="🔍 Поиск по файлу, ИНН, контрагенту..." 
                        class="w-full bg-white/10 rounded-lg px-4 py-2 text-sm" onkeyup="handleHistorySearch()">
@@ -287,18 +505,18 @@
           </div>
 
           <!-- Таблица истории -->
-          <div class="flex-1 min-h-0 overflow-auto">
-            <table class="w-full text-sm">
+          <div class="flex-1 min-h-0 overflow-auto history-table-container table-container">
+            <table class="w-full text-sm history-table">
               <thead class="sticky top-0 bg-dark-card z-10">
                 <tr class="border-b border-white/20">
                   <th class="text-left p-3">Исходное имя файла</th>
                   <th class="text-left p-3">Тип документа</th>
                   <th class="text-left p-3">Статус</th>
                   <th class="text-left p-3">Контрагент</th>
-                  <th class="text-left p-3">ИНН</th>
-                  <th class="text-left p-3">Дата документа</th>
+                  <th class="text-left p-3 hide-mobile">ИНН</th>
+                  <th class="text-left p-3 hide-mobile">Дата документа</th>
                   <th class="text-left p-3">Сумма</th>
-                  <th class="text-left p-3">Дата обработки</th>
+                  <th class="text-left p-3 hide-mobile">Дата обработки</th>
                   <th class="text-left p-3">Действия</th>
                 </tr>
               </thead>
@@ -1571,6 +1789,29 @@
       return div.innerHTML;
     }
 
+    // Мобильное меню
+    function toggleMobileMenu() {
+      const sidebar = document.querySelector('.sidebar');
+      const overlay = document.getElementById('sidebar-overlay');
+      
+      if (sidebar.classList.contains('open')) {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('active');
+      } else {
+        sidebar.classList.add('open');
+        overlay.classList.add('active');
+      }
+    }
+
+    // Закрытие меню при клике на элемент навигации (на мобильных)
+    document.querySelectorAll('.sidebar-item').forEach(item => {
+      item.addEventListener('click', () => {
+        if (window.innerWidth <= 768) {
+          toggleMobileMenu();
+        }
+      });
+    });
+
     // Обновляем showTab для загрузки истории
     const originalShowTab = showTab;
     showTab = function(tab) {
@@ -1581,6 +1822,8 @@
         loadContractorsList();
         loadDocumentTypes();
       }
+      // Переинициализация иконок после переключения вкладок
+      setTimeout(() => lucide.createIcons(), 100);
     };
 
     setInterval(updateCounts, 2000);
