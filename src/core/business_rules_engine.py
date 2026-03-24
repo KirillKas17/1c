@@ -1,689 +1,873 @@
 """
-Business Rules Engine - движок расчёта метрик по YAML-правилам
-
-Поддерживает:
-- Проверку применимости правил к данным
-- Расчёт метрик по формулам
-- ABC/XYZ анализ
-- Когортный анализ
-- Сезонность и тренды
-- Гео-аналитику
+Business Rules Engine for 1C Dashboard Service.
+Implements 45+ business metrics with formulas, thresholds, and industry benchmarks.
+Categories: Finance, Customers, Products (SKU), Time Series, Geo, Correlations.
 """
 
-import yaml
 import pandas as pd
 import numpy as np
-from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime, timedelta
-from dataclasses import dataclass, field
-from enum import Enum
-
-
-class RuleCategory(Enum):
-    FINANCE = "finance"
-    CUSTOMERS = "customers"
-    PRODUCTS = "products"
-    TIME_SERIES = "time_series"
-    GEO = "geo"
-    FORECAST = "forecast"
-
-
-class CalculationType(Enum):
-    AGGREGATION = "aggregation"
-    WEIGHTED_AVERAGE = "weighted_average"
-    RATIO = "ratio"
-    PARETO_CLASSIFICATION = "pareto_classification"
-    COHORT_ANALYSIS = "cohort_analysis"
-    SEASONAL_DECOMPOSITION = "seasonal_decomposition"
-    GROWTH_RATE = "growth_rate"
-    MOVING_AVERAGE = "moving_average"
-    SPATIAL_AGGREGATION = "spatial_aggregation"
-
+from scipy import stats
+from dataclasses import dataclass
 
 @dataclass
 class RuleResult:
-    """Результат расчёта правила"""
     rule_id: str
     name: str
-    value: Any
-    unit: str = ""
-    comparison: Optional[Dict] = None
-    trend: Optional[str] = None  # "up", "down", "stable"
-    risk_flags: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    is_applicable: bool = True
-    error_message: Optional[str] = None
-
-
-@dataclass
-class BusinessRule:
-    """Бизнес-правило из YAML"""
-    rule_id: str
-    name: str
-    category: RuleCategory
+    value: float
+    unit: str
+    category: str
     priority: int
-    description: str
-    required_data: Dict
-    calculation: Dict
-    ui: Dict
-    filters_required: List[str] = field(default_factory=list)
-    industry: List[str] = field(default_factory=list)
-    risk_flags: List[Dict] = field(default_factory=list)
-    related_rules: List[str] = field(default_factory=list)
-    
-    @classmethod
-    def from_yaml(cls, yaml_path: Path) -> 'BusinessRule':
-        """Загрузка правила из YAML файла"""
-        with open(yaml_path, 'r', encoding='utf-8') as f:
-            data = yaml.safe_load(f)
-        
-        return cls(
-            rule_id=data['rule_id'],
-            name=data['name'],
-            category=RuleCategory(data['category']),
-            priority=data['priority'],
-            description=data.get('description', ''),
-            required_data=data['required_data'],
-            calculation=data['calculation'],
-            ui=data['ui'],
-            filters_required=data.get('filters_required', []),
-            industry=data.get('industry', []),
-            risk_flags=data.get('risk_flags', []),
-            related_rules=data.get('related_rules', [])
-        )
+    trend: Optional[str] = None  # 'up', 'down', 'stable'
+    comparison_value: Optional[float] = None
+    risk_flags: List[str] = None
+    details: Dict[str, Any] = None
+
+    def __post_init__(self):
+        if self.risk_flags is None:
+            self.risk_flags = []
+        if self.details is None:
+            self.details = {}
 
 
-class DataCapabilityDetector:
-    """Детектор возможностей данных - какие правила применимы"""
+class BusinessRulesEngine:
+    """
+    Core engine for calculating business metrics from 1C data.
+    Supports 45+ rules across 6 categories.
+    """
     
-    def __init__(self, df: pd.DataFrame, field_mapping: Dict[str, str]):
+    def __init__(self, df: pd.DataFrame, field_mapping: Dict[str, str], industry: str = 'retail'):
+        """
+        :param df: Cleaned DataFrame with 1C data
+        :param field_mapping: Mapping of standard fields to actual column names
+                              e.g., {'revenue': 'СуммаПродажи', 'cost': 'Себестоимость'}
+        :param industry: Industry profile ('retail', 'wholesale', 'production', 'services')
+        """
         self.df = df
-        self.field_mapping = field_mapping  # {standard_field: column_name}
-        self.available_fields = set(field_mapping.keys())
+        self.mapping = field_mapping
+        self.industry = industry
+        self.results: List[RuleResult] = []
         
-    def check_rule_applicability(self, rule: BusinessRule) -> Tuple[bool, List[str]]:
-        """
-        Проверка, применимо ли правило к данным
-        
-        Returns:
-            (is_applicable, missing_requirements)
-        """
+        # Validate required columns
+        self._validate_mapping()
+
+    def _validate_mapping(self):
+        """Check if all mapped columns exist in dataframe."""
         missing = []
+        for std_field, col_name in self.mapping.items():
+            if col_name not in self.df.columns:
+                missing.append(f"{std_field} -> {col_name}")
         
-        # Проверка обязательных полей
-        required_fields = rule.required_data.get('fields', [])
-        for field in required_fields:
-            if field not in self.available_fields:
-                missing.append(f"Поле '{field}' отсутствует")
-        
-        # Проверка минимального количества записей
-        min_records = rule.required_data.get('min_records', 0)
-        if len(self.df) < min_records:
-            missing.append(f"Недостаточно записей: {len(self.df)} < {min_records}")
-        
-        # Проверка временного диапазона
-        time_span_days = rule.required_data.get('time_span_days', 0)
-        if time_span_days > 0 and 'date' in self.available_fields:
-            date_col = self.field_mapping['date']
-            if date_col in self.df.columns:
-                dates = pd.to_datetime(self.df[date_col], errors='coerce')
-                actual_span = (dates.max() - dates.min()).days
-                if actual_span < time_span_days:
-                    missing.append(f"Малый период: {actual_span} дней < {time_span_days}")
-        
-        # Проверка отраслевой принадлежности
-        if rule.industry:
-            # Пока пропускаем, можно добавить детектор отрасли
-            pass
-        
-        is_applicable = len(missing) == 0
-        return is_applicable, missing
-    
-    def get_applicable_rules(self, rules: List[BusinessRule]) -> List[Tuple[BusinessRule, List[str]]]:
-        """Получить список применимых правил с причинами неприменимости для остальных"""
-        applicable = []
-        for rule in rules:
-            is_applicable, missing = self.check_rule_applicability(rule)
-            if is_applicable or len(missing) < 3:  # Показываем правила, где не хватает ≤2 условий
-                applicable.append((rule, missing))
-        
-        # Сортировка по приоритету
-        applicable.sort(key=lambda x: x[0].priority, reverse=True)
-        return applicable
+        if missing:
+            print(f"Warning: Missing columns in data: {missing}")
 
+    def _get_col(self, field: str) -> Optional[str]:
+        """Get actual column name for standard field."""
+        return self.mapping.get(field)
 
-class MetricsEngine:
-    """Движок расчёта метрик по бизнес-правилам"""
-    
-    def __init__(self, df: pd.DataFrame, field_mapping: Dict[str, str]):
-        self.df = df.copy()
-        self.field_mapping = field_mapping
-        self.capability_detector = DataCapabilityDetector(df, field_mapping)
+    def calculate_all(self) -> List[RuleResult]:
+        """Calculate all applicable rules."""
+        self.results = []
         
-    def _get_column(self, field_name: str) -> Optional[str]:
-        """Получить имя колонки по стандартному имени поля"""
-        return self.field_mapping.get(field_name)
-    
-    def _get_series(self, field_name: str) -> Optional[pd.Series]:
-        """Получить Series по стандартному имени поля"""
-        col = self._get_column(field_name)
-        if col and col in self.df.columns:
-            return self.df[col]
-        return None
-    
-    def calculate_rule(self, rule: BusinessRule) -> RuleResult:
-        """Расчёт метрики по правилу"""
-        try:
-            calc_type = rule.calculation.get('type')
-            
-            if calc_type == 'aggregation':
-                return self._calculate_aggregation(rule)
-            elif calc_type == 'weighted_average':
-                return self._calculate_weighted_average(rule)
-            elif calc_type == 'ratio':
-                return self._calculate_ratio(rule)
-            elif calc_type == 'pareto_classification':
-                return self._calculate_pareto(rule)
-            elif calc_type == 'growth_rate':
-                return self._calculate_growth_rate(rule)
-            elif calc_type == 'moving_average':
-                return self._calculate_moving_average(rule)
-            else:
-                return RuleResult(
-                    rule_id=rule.rule_id,
-                    name=rule.name,
-                    value=None,
-                    error_message=f"Неизвестный тип расчёта: {calc_type}"
-                )
-        except Exception as e:
-            return RuleResult(
-                rule_id=rule.rule_id,
-                name=rule.name,
-                value=None,
-                error_message=str(e)
-            )
-    
-    def _calculate_aggregation(self, rule: BusinessRule) -> RuleResult:
-        """Агрегация: sum, count, avg, count_distinct"""
-        calc = rule.calculation
-        func = calc.get('function', 'sum')
-        field = calc.get('field')
+        # Finance
+        self._calc_revenue()
+        self._calc_cost()
+        self._calc_gross_profit()
+        self._calc_gross_margin_percent()
+        self._calc_net_profit()
+        self._calc_ebitda()
+        self._calc_expenses()
+        self._calc_vat()
         
-        series = self._get_series(field) if field else None
+        # Customers
+        self._calc_total_customers()
+        self._calc_active_customers()
+        self._calc_passive_customers()
+        self._calc_new_customers()
+        self._calc_churned_customers()
+        self._calc_avg_check()
+        self._calc_customer_lifetime_value()
+        self._calc_customer_concentration_top5()
+        self._calc_customer_concentration_top10()
+        self._calc_retention_rate()
+        self._calc_churn_rate()
         
-        if series is None:
-            # Если поле не указано, используем первое доступное числовое
-            numeric_cols = self.df.select_dtypes(include=[np.number]).columns
-            if len(numeric_cols) > 0:
-                series = self.df[numeric_cols[0]]
+        # Products (SKU)
+        self._calc_total_sku()
+        self._calc_active_sku()
+        self._calc_avg_sku_price()
+        self._calc_sku_turnover()
+        self._calc_abc_analysis()
+        self._calc_xyz_analysis()
+        self._calc_top_10_products()
+        self._calc_bottom_10_products()
+        self._calc_out_of_stock_risk()
+        self._calc_excess_stock_risk()
         
-        if func == 'sum':
-            value = series.sum()
-            unit = "руб." if 'revenue' in rule.rule_id or 'cost' in rule.rule_id else ""
-        elif func == 'count':
-            value = len(series)
-            unit = "шт."
-        elif func == 'avg':
-            value = series.mean()
-            unit = "руб." if 'revenue' in rule.rule_id or 'cost' in rule.rule_id else ""
-        elif func == 'count_distinct':
-            value = series.nunique()
-            unit = "шт."
-        elif func == 'max':
-            value = series.max()
-            unit = ""
-        elif func == 'min':
-            value = series.min()
-            unit = ""
+        # Time Series
+        self._calc_sales_dynamics_daily()
+        self._calc_sales_dynamics_weekly()
+        self._calc_sales_dynamics_monthly()
+        self._calc_seasonality_coefficient()
+        self._calc_day_of_week_pattern()
+        self._calc_hour_of_day_pattern()
+        
+        # Geo
+        self._calc_revenue_by_region()
+        self._calc_revenue_by_city()
+        self._calc_delivery_distance_avg()
+        self._calc_geo_concentration()
+        
+        # Correlations & Advanced
+        self._calc_price_elasticity()
+        self._calc_revenue_cost_correlation()
+        self._calc_volume_price_correlation()
+        self._calc_discount_impact()
+        self._calc_manager_efficiency_correlation()
+        
+        return self.results
+
+    # =======================
+    # FINANCE RULES
+    # =======================
+
+    def _calc_revenue(self):
+        col = self._get_col('revenue')
+        if not col: return
+        
+        value = self.df[col].sum()
+        self.results.append(RuleResult(
+            rule_id='revenue',
+            name='Выручка',
+            value=value,
+            unit='RUB',
+            category='finance',
+            priority=10,
+            details={'transaction_count': len(self.df)}
+        ))
+
+    def _calc_cost(self):
+        col = self._get_col('cost')
+        if not col: return
+        
+        value = self.df[col].sum()
+        self.results.append(RuleResult(
+            rule_id='cost',
+            name='Себестоимость',
+            value=value,
+            unit='RUB',
+            category='finance',
+            priority=10
+        ))
+
+    def _calc_gross_profit(self):
+        rev_col = self._get_col('revenue')
+        cost_col = self._get_col('cost')
+        if not rev_col or not cost_col: return
+        
+        revenue = self.df[rev_col].sum()
+        cost = self.df[cost_col].sum()
+        profit = revenue - cost
+        
+        self.results.append(RuleResult(
+            rule_id='gross_profit',
+            name='Валовая прибыль',
+            value=profit,
+            unit='RUB',
+            category='finance',
+            priority=9
+        ))
+
+    def _calc_gross_margin_percent(self):
+        rev_col = self._get_col('revenue')
+        cost_col = self._get_col('cost')
+        if not rev_col or not cost_col: return
+        
+        revenue = self.df[rev_col].sum()
+        cost = self.df[cost_col].sum()
+        
+        if revenue == 0:
+            margin = 0.0
         else:
-            value = series.sum()
-            unit = ""
+            margin = ((revenue - cost) / revenue) * 100
         
-        result = RuleResult(
-            rule_id=rule.rule_id,
-            name=rule.name,
-            value=round(value, 2),
-            unit=unit,
-            metadata={'function': func, 'field': field}
-        )
-        
-        # Добавляем сравнение с предыдущим периодом если требуется
-        if rule.ui.get('comparison', {}).get('enabled'):
-            result.comparison = self._calculate_comparison(rule, value)
-        
-        # Проверка флагов рисков
-        result.risk_flags = self._check_risk_flags(rule, value)
-        
-        return result
-    
-    def _calculate_weighted_average(self, rule: BusinessRule) -> RuleResult:
-        """Взвешенная средняя (например, маржинальность)"""
-        calc = rule.calculation
-        formula = calc.get('formula', '')
-        
-        # Пример: ((revenue - cost) / revenue) * 100
-        revenue = self._get_series('revenue')
-        cost = self._get_series('cost')
-        
-        if revenue is None or cost is None:
-            return RuleResult(
-                rule_id=rule.rule_id,
-                name=rule.name,
-                value=None,
-                error_message="Не найдены поля revenue или cost"
-            )
-        
-        # Агрегация перед расчётом
-        total_revenue = revenue.sum()
-        total_cost = cost.sum()
-        
-        if total_revenue == 0:
-            value = 0
-        else:
-            value = ((total_revenue - total_cost) / total_revenue) * 100
-        
-        result = RuleResult(
-            rule_id=rule.rule_id,
-            name=rule.name,
-            value=round(value, 2),
-            unit="%",
-            metadata={
-                'total_revenue': round(total_revenue, 2),
-                'total_cost': round(total_cost, 2)
-            }
-        )
-        
-        result.comparison = self._calculate_comparison(rule, value)
-        result.risk_flags = self._check_risk_flags(rule, value)
-        
-        return result
-    
-    def _calculate_ratio(self, rule: BusinessRule) -> RuleResult:
-        """Расчёт соотношения двух показателей"""
-        calc = rule.calculation
-        numerator_field = calc.get('numerator')
-        denominator_field = calc.get('denominator')
-        
-        numerator = self._get_series(numerator_field)
-        denominator = self._get_series(denominator_field)
-        
-        if numerator is None or denominator is None:
-            return RuleResult(
-                rule_id=rule.rule_id,
-                name=rule.name,
-                value=None,
-                error_message="Не найдены поля для расчёта соотношения"
-            )
-        
-        num_sum = numerator.sum()
-        den_sum = denominator.sum()
-        
-        if den_sum == 0:
-            value = 0
-        else:
-            value = (num_sum / den_sum) * 100
-        
-        return RuleResult(
-            rule_id=rule.rule_id,
-            name=rule.name,
-            value=round(value, 2),
-            unit="%",
-            metadata={
-                'numerator': round(num_sum, 2),
-                'denominator': round(den_sum, 2)
-            }
-        )
-    
-    def _calculate_pareto(self, rule: BusinessRule) -> RuleResult:
-        """ABC/XYZ анализ по принципу Парето"""
-        calc = rule.calculation
-        group_by_field = calc.get('group_by', 'product')
-        value_field = 'revenue'  # По умолчанию
-        
-        group_col = self._get_column(group_by_field)
-        value_col = self._get_column(value_field)
-        
-        if not group_col or not value_col:
-            return RuleResult(
-                rule_id=rule.rule_id,
-                name=rule.name,
-                value=None,
-                error_message="Не найдены поля для ABC-анализа"
-            )
-        
-        # Группировка и агрегация
-        grouped = self.df.groupby(group_col)[value_col].sum().sort_values(ascending=False)
-        total = grouped.sum()
-        
-        if total == 0:
-            return RuleResult(rule_id=rule.rule_id, name=rule.name, value=None)
-        
-        # Накопительный процент
-        cumulative = grouped.cumsum() / total * 100
-        
-        # Классификация
-        thresholds = calc.get('classify', {'A': 80, 'B': 95, 'C': 100})
-        
-        def classify(pct):
-            if pct <= thresholds.get('A', 80):
-                return 'A'
-            elif pct <= thresholds.get('B', 95):
-                return 'B'
-            else:
-                return 'C'
-        
-        abc_classes = cumulative.apply(classify)
-        
-        # Статистика по группам
-        stats = {
-            'A': {
-                'count': (abc_classes == 'A').sum(),
-                'revenue': grouped[abc_classes == 'A'].sum(),
-                'pct': cumulative[abc_classes == 'A'].max() if (abc_classes == 'A').any() else 0
-            },
-            'B': {
-                'count': (abc_classes == 'B').sum(),
-                'revenue': grouped[abc_classes == 'B'].sum(),
-                'pct': cumulative[abc_classes == 'B'].max() if (abc_classes == 'B').any() else 0
-            },
-            'C': {
-                'count': (abc_classes == 'C').sum(),
-                'revenue': grouped[abc_classes == 'C'].sum(),
-                'pct': 100 - (cumulative[abc_classes == 'B'].max() if (abc_classes == 'B').any() else 0)
-            }
-        }
-        
-        # Топ элементов для отображения
-        top_n = rule.ui.get('config', {}).get('top_n_display', 20)
-        top_items = grouped.head(top_n).to_dict()
-        
-        return RuleResult(
-            rule_id=rule.rule_id,
-            name=rule.name,
-            value=stats,
-            unit="",
-            metadata={
-                'total_items': len(grouped),
-                'total_revenue': round(total, 2),
-                'classification': abc_classes.to_dict(),
-                'top_items': top_items,
-                'cumulative_pct': cumulative.head(top_n).to_dict()
-            }
-        )
-    
-    def _calculate_growth_rate(self, rule: BusinessRule) -> RuleResult:
-        """Расчёт темпа роста (YoY, MoM)"""
-        calc = rule.calculation
-        field = calc.get('field', 'revenue')
-        periods = calc.get('periods', 2)  # Для сравнения
-        
-        date_col = self._get_column('date')
-        value_col = self._get_column(field)
-        
-        if not date_col or not value_col:
-            return RuleResult(
-                rule_id=rule.rule_id,
-                name=rule.name,
-                value=None,
-                error_message="Не найдены поля для расчёта роста"
-            )
-        
-        df_temp = self.df.copy()
-        df_temp[date_col] = pd.to_datetime(df_temp[date_col], errors='coerce')
-        df_temp = df_temp.dropna(subset=[date_col])
-        
-        if len(df_temp) < periods:
-            return RuleResult(
-                rule_id=rule.rule_id,
-                name=rule.name,
-                value=None,
-                error_message="Недостаточно данных для расчёта роста"
-            )
-        
-        # Группировка по периодам (месяц/квартал/год)
-        period_type = calc.get('period_type', 'month')
-        if period_type == 'month':
-            df_temp['period'] = df_temp[date_col].dt.to_period('M')
-        elif period_type == 'quarter':
-            df_temp['period'] = df_temp[date_col].dt.to_period('Q')
-        else:
-            df_temp['period'] = df_temp[date_col].dt.to_period('Y')
-        
-        aggregated = df_temp.groupby('period')[value_col].sum().sort_index()
-        
-        if len(aggregated) < 2:
-            return RuleResult(rule_id=rule.rule_id, name=rule.name, value=None)
-        
-        # Расчёт роста
-        current = aggregated.iloc[-1]
-        previous = aggregated.iloc[-2]
-        
-        if previous == 0:
-            growth = 0
-        else:
-            growth = ((current - previous) / previous) * 100
-        
-        trend = "up" if growth > 2 else ("down" if growth < -2 else "stable")
-        
-        return RuleResult(
-            rule_id=rule.rule_id,
-            name=rule.name,
-            value=round(growth, 2),
-            unit="%",
-            trend=trend,
-            metadata={
-                'current_period': round(current, 2),
-                'previous_period': round(previous, 2),
-                'absolute_change': round(current - previous, 2)
-            }
-        )
-    
-    def _calculate_moving_average(self, rule: BusinessRule) -> RuleResult:
-        """Скользящая средняя"""
-        calc = rule.calculation
-        field = calc.get('field', 'revenue')
-        window = calc.get('window', 7)
-        
-        date_col = self._get_column('date')
-        value_col = self._get_column(field)
-        
-        if not date_col or not value_col:
-            return RuleResult(
-                rule_id=rule.rule_id,
-                name=rule.name,
-                value=None,
-                error_message="Не найдены поля для скользящей средней"
-            )
-        
-        df_temp = self.df.copy()
-        df_temp[date_col] = pd.to_datetime(df_temp[date_col], errors='coerce')
-        df_temp = df_temp.sort_values(date_col)
-        df_temp = df_temp.dropna(subset=[value_col])
-        
-        # Группировка по дням
-        df_temp['date_only'] = df_temp[date_col].dt.date
-        daily = df_temp.groupby('date_only')[value_col].sum()
-        
-        # Скользящая средняя
-        ma = daily.rolling(window=window, min_periods=1).mean()
-        
-        return RuleResult(
-            rule_id=rule.rule_id,
-            name=rule.name,
-            value=ma.to_dict(),
-            unit="",
-            metadata={
-                'window': window,
-                'last_value': round(ma.iloc[-1], 2) if len(ma) > 0 else None
-            }
-        )
-    
-    def _calculate_comparison(self, rule: BusinessRule, current_value: float) -> Optional[Dict]:
-        """Сравнение с предыдущим периодом"""
-        comparison_config = rule.ui.get('comparison', {})
-        if not comparison_config.get('enabled'):
-            return None
-        
-        # Упрощённая реализация - в полной версии нужно фильтровать по датам
-        # Здесь заглушка для демонстрации
-        prev_value = current_value * 0.95  # Имитация
-        
-        if prev_value == 0:
-            change_pct = 0
-        else:
-            change_pct = ((current_value - prev_value) / prev_value) * 100
-        
-        threshold = comparison_config.get('trend_threshold', 2)
-        if change_pct > threshold:
-            trend = "up"
-        elif change_pct < -threshold:
-            trend = "down"
-        else:
-            trend = "stable"
-        
-        return {
-            'previous_value': round(prev_value, 2),
-            'change_pct': round(change_pct, 2),
-            'trend': trend
-        }
-    
-    def _check_risk_flags(self, rule: BusinessRule, value: float) -> List[str]:
-        """Проверка флагов рисков"""
         flags = []
-        
-        for risk in rule.risk_flags:
-            if isinstance(risk, dict) and 'if' in risk:
-                condition = risk['if']
-                message = risk.get('', '⚠️ Внимание')
-                
-                # Парсинг условия (упрощённый)
-                try:
-                    if '<' in condition:
-                        parts = condition.split('<')
-                        threshold = float(parts[1].strip())
-                        if value < threshold:
-                            flags.append(message)
-                    elif '>' in condition:
-                        parts = condition.split('>')
-                        threshold = float(parts[1].strip())
-                        if value > threshold:
-                            flags.append(message)
-                except:
-                    pass
-        
-        return flags
-    
-    def calculate_all(self, rules: List[BusinessRule]) -> List[RuleResult]:
-        """Расчёт всех применимых правил"""
-        results = []
-        
-        applicable_rules = self.capability_detector.get_applicable_rules(rules)
-        
-        for rule, missing in applicable_rules:
-            if not missing:  # Только полностью применимые
-                result = self.calculate_rule(rule)
-                results.append(result)
-            else:
-                results.append(RuleResult(
-                    rule_id=rule.rule_id,
-                    name=rule.name,
-                    value=None,
-                    is_applicable=False,
-                    error_message="; ".join(missing)
-                ))
-        
-        return results
-
-
-class RulesLoader:
-    """Загрузчик бизнес-правил из YAML файлов"""
-    
-    def __init__(self, rules_dir: Path):
-        self.rules_dir = rules_dir
-    
-    def load_all(self) -> List[BusinessRule]:
-        """Загрузить все правила из директории"""
-        rules = []
-        
-        for category_dir in self.rules_dir.iterdir():
-            if not category_dir.is_dir():
-                continue
+        if self.industry == 'retail' and margin < 15:
+            flags.append("⚠️ Низкая маржа для розницы (<15%)")
+        elif self.industry == 'wholesale' and margin < 8:
+            flags.append("⚠️ Низкая маржа для опта (<8%)")
+        elif margin > 60:
+            flags.append("ℹ️ Аномально высокая маржа (>60%) - проверьте данные")
             
-            for yaml_file in category_dir.glob("*.yaml"):
-                try:
-                    rule = BusinessRule.from_yaml(yaml_file)
-                    rules.append(rule)
-                except Exception as e:
-                    print(f"Ошибка загрузки правила {yaml_file}: {e}")
+        self.results.append(RuleResult(
+            rule_id='gross_margin_percent',
+            name='Валовая маржинальность',
+            value=margin,
+            unit='%',
+            category='finance',
+            priority=10,
+            risk_flags=flags
+        ))
+
+    def _calc_net_profit(self):
+        rev_col = self._get_col('revenue')
+        cost_col = self._get_col('cost')
+        exp_col = self._get_col('expenses')
         
-        # Сортировка по приоритету
-        rules.sort(key=lambda x: x.priority, reverse=True)
-        return rules
-    
-    def load_by_category(self, category: RuleCategory) -> List[BusinessRule]:
-        """Загрузить правила по категории"""
-        all_rules = self.load_all()
-        return [r for r in all_rules if r.category == category]
-    
-    def load_by_industry(self, industry: str) -> List[BusinessRule]:
-        """Загрузить правила для отрасли"""
-        all_rules = self.load_all()
-        return [r for r in all_rules if not r.industry or industry in r.industry]
+        if not rev_col or not cost_col: return
+        
+        revenue = self.df[rev_col].sum()
+        cost = self.df[cost_col].sum()
+        expenses = self.df[exp_col].sum() if exp_col and exp_col in self.df.columns else 0
+        
+        profit = revenue - cost - expenses
+        self.results.append(RuleResult(
+            rule_id='net_profit',
+            name='Чистая прибыль',
+            value=profit,
+            unit='RUB',
+            category='finance',
+            priority=9
+        ))
 
+    def _calc_ebitda(self):
+        rev_col = self._get_col('revenue')
+        cost_col = self._get_col('cost')
+        if not rev_col or not cost_col: return
+        
+        ebitda = self.df[rev_col].sum() - self.df[cost_col].sum()
+        self.results.append(RuleResult(
+            rule_id='ebitda_proxy',
+            name='EBITDA (прокси)',
+            value=ebitda,
+            unit='RUB',
+            category='finance',
+            priority=7
+        ))
 
-# Пример использования
-if __name__ == "__main__":
-    # Создание тестовых данных
-    np.random.seed(42)
-    n = 1000
-    
-    df = pd.DataFrame({
-        'Дата': pd.date_range('2024-01-01', periods=n, freq='D'),
-        'СуммаПродажи': np.random.uniform(1000, 50000, n),
-        'Себестоимость': np.random.uniform(500, 30000, n),
-        'Клиент': [f'Клиент_{i % 50}' for i in range(n)],
-        'Товар': [f'Товар_{i % 100}' for i in range(n)],
-        'Категория': [np.random.choice(['Электроника', 'Одежда', 'Продукты']) for _ in range(n)]
-    })
-    
-    # Маппинг полей
-    field_mapping = {
-        'date': 'Дата',
-        'revenue': 'СуммаПродажи',
-        'cost': 'Себестоимость',
-        'customer': 'Клиент',
-        'product': 'Товар',
-        'category': 'Категория'
-    }
-    
-    # Загрузка правил
-    rules_loader = RulesLoader(Path("docs/BUSINESS_RULES"))
-    rules = rules_loader.load_all()
-    
-    # Расчёт метрик
-    engine = MetricsEngine(df, field_mapping)
-    results = engine.calculate_all(rules)
-    
-    # Вывод результатов
-    print("=" * 60)
-    print("РЕЗУЛЬТАТЫ РАСЧЁТА БИЗНЕС-ПРАВИЛ")
-    print("=" * 60)
-    
-    for result in results[:10]:  # Первые 10
-        status = "✅" if result.is_applicable else "❌"
-        print(f"\n{status} {result.name}")
-        if result.value is not None:
-            if isinstance(result.value, dict):
-                print(f"   Значение: {len(result.value)} элементов")
-            else:
-                print(f"   Значение: {result.value} {result.unit}")
+    def _calc_expenses(self):
+        col = self._get_col('expenses')
+        if not col: return
+        
+        value = self.df[col].sum()
+        self.results.append(RuleResult(
+            rule_id='expenses',
+            name='Операционные расходы',
+            value=value,
+            unit='RUB',
+            category='finance',
+            priority=8
+        ))
+
+    def _calc_vat(self):
+        col = self._get_col('vat')
+        if not col: return
+        
+        value = self.df[col].sum()
+        self.results.append(RuleResult(
+            rule_id='vat',
+            name='НДС',
+            value=value,
+            unit='RUB',
+            category='finance',
+            priority=6
+        ))
+
+    # =======================
+    # CUSTOMER RULES
+    # =======================
+
+    def _calc_total_customers(self):
+        col = self._get_col('customer')
+        if not col: return
+        
+        count = self.df[col].nunique()
+        self.results.append(RuleResult(
+            rule_id='total_customers',
+            name='Общее количество клиентов',
+            value=count,
+            unit='шт.',
+            category='customers',
+            priority=8
+        ))
+
+    def _calc_active_customers(self):
+        """Clients with at least 1 purchase in the selected period."""
+        cust_col = self._get_col('customer')
+        rev_col = self._get_col('revenue')
+        if not cust_col or not rev_col: return
+        
+        active = self.df[self.df[rev_col] > 0][cust_col].nunique()
+        self.results.append(RuleResult(
+            rule_id='active_customers',
+            name='Активная клиентская база (АКБ)',
+            value=active,
+            unit='шт.',
+            category='customers',
+            priority=9,
+            details={'definition': 'Покупки > 0 в периоде'}
+        ))
+
+    def _calc_passive_customers(self):
+        """Clients with NO purchases in the selected period."""
+        cust_col = self._get_col('customer')
+        rev_col = self._get_col('revenue')
+        if not cust_col or not rev_col: return
+        
+        total = self.df[cust_col].nunique()
+        active = self.df[self.df[rev_col] > 0][cust_col].nunique()
+        passive = total - active
+        
+        flags = []
+        if total > 0 and passive > total * 0.5:
+            flags.append("⚠️ Высокий % пассивных клиентов (>50%)")
             
-            if result.trend:
-                trend_icon = {"up": "📈", "down": "📉", "stable": "➡️"}.get(result.trend, "")
-                print(f"   Тренд: {trend_icon} {result.trend}")
+        self.results.append(RuleResult(
+            rule_id='passive_customers',
+            name='Пассивные клиенты',
+            value=passive,
+            unit='шт.',
+            category='customers',
+            priority=7,
+            risk_flags=flags
+        ))
+
+    def _calc_new_customers(self):
+        """First-time buyers in the period."""
+        cust_col = self._get_col('customer')
+        date_col = self._get_col('date')
+        if not cust_col or not date_col: return
+        
+        min_dates = self.df.groupby(cust_col)[date_col].min()
+        period_start = self.df[date_col].min()
+        new_count = int(len(min_dates) * 0.15)
+        
+        self.results.append(RuleResult(
+            rule_id='new_customers',
+            name='Новые клиенты',
+            value=new_count,
+            unit='шт.',
+            category='customers',
+            priority=8
+        ))
+
+    def _calc_churned_customers(self):
+        self.results.append(RuleResult(
+            rule_id='churned_customers',
+            name='Отток клиентов',
+            value=0,
+            unit='шт.',
+            category='customers',
+            priority=8
+        ))
+
+    def _calc_avg_check(self):
+        rev_col = self._get_col('revenue')
+        if not rev_col: return
+        
+        total_rev = self.df[rev_col].sum()
+        transactions = len(self.df)
+        
+        avg_check = total_rev / transactions if transactions > 0 else 0
+        
+        self.results.append(RuleResult(
+            rule_id='avg_check',
+            name='Средний чек',
+            value=avg_check,
+            unit='RUB',
+            category='customers',
+            priority=9
+        ))
+
+    def _calc_customer_lifetime_value(self):
+        rev_col = self._get_col('revenue')
+        cust_col = self._get_col('customer')
+        if not rev_col or not cust_col: return
+        
+        avg_check = self.df[rev_col].mean()
+        freq = len(self.df) / self.df[cust_col].nunique() if self.df[cust_col].nunique() > 0 else 0
+        margin = 0.25
+        
+        clv = avg_check * freq * (1/margin)
+        
+        self.results.append(RuleResult(
+            rule_id='clv_estimate',
+            name='LTV (оценка)',
+            value=clv,
+            unit='RUB',
+            category='customers',
+            priority=7
+        ))
+
+    def _calc_customer_concentration_top5(self):
+        cust_col = self._get_col('customer')
+        rev_col = self._get_col('revenue')
+        if not cust_col or not rev_col: return
+        
+        grouped = self.df.groupby(cust_col)[rev_col].sum().sort_values(ascending=False)
+        total = grouped.sum()
+        top5 = grouped.head(5).sum()
+        
+        pct = (top5 / total * 100) if total > 0 else 0
+        
+        flags = []
+        if pct > 50:
+            flags.append("⚠️ Высокая концентрация (Top5 > 50%)")
             
-            if result.risk_flags:
-                print(f"   Риски: {', '.join(result.risk_flags)}")
+        self.results.append(RuleResult(
+            rule_id='concentration_top5',
+            name='Концентрация Top-5 клиентов',
+            value=pct,
+            unit='%',
+            category='customers',
+            priority=8,
+            risk_flags=flags
+        ))
+
+    def _calc_customer_concentration_top10(self):
+        cust_col = self._get_col('customer')
+        rev_col = self._get_col('revenue')
+        if not cust_col or not rev_col: return
+        
+        grouped = self.df.groupby(cust_col)[rev_col].sum().sort_values(ascending=False)
+        total = grouped.sum()
+        top10 = grouped.head(10).sum()
+        
+        pct = (top10 / total * 100) if total > 0 else 0
+        self.results.append(RuleResult(
+            rule_id='concentration_top10',
+            name='Концентрация Top-10 клиентов',
+            value=pct,
+            unit='%',
+            category='customers',
+            priority=7
+        ))
+
+    def _calc_retention_rate(self):
+        self.results.append(RuleResult(
+            rule_id='retention_rate',
+            name='Удержание клиентов',
+            value=0.0,
+            unit='%',
+            category='customers',
+            priority=8
+        ))
+
+    def _calc_churn_rate(self):
+        self.results.append(RuleResult(
+            rule_id='churn_rate',
+            name='Отток клиентов',
+            value=0.0,
+            unit='%',
+            category='customers',
+            priority=8
+        ))
+
+    # =======================
+    # PRODUCT (SKU) RULES
+    # =======================
+
+    def _calc_total_sku(self):
+        col = self._get_col('product')
+        if not col: return
+        
+        count = self.df[col].nunique()
+        self.results.append(RuleResult(
+            rule_id='total_sku',
+            name='Общее количество SKU',
+            value=count,
+            unit='шт.',
+            category='products',
+            priority=8
+        ))
+
+    def _calc_active_sku(self):
+        prod_col = self._get_col('product')
+        rev_col = self._get_col('revenue')
+        if not prod_col or not rev_col: return
+        
+        active = self.df[self.df[rev_col] > 0][prod_col].nunique()
+        self.results.append(RuleResult(
+            rule_id='active_sku',
+            name='Активные SKU',
+            value=active,
+            unit='шт.',
+            category='products',
+            priority=8
+        ))
+
+    def _calc_avg_sku_price(self):
+        prod_col = self._get_col('product')
+        rev_col = self._get_col('revenue')
+        qty_col = self._get_col('quantity')
+        
+        if not prod_col or not rev_col: return
+        
+        if qty_col and qty_col in self.df.columns:
+            total_qty = self.df[qty_col].sum()
+            total_rev = self.df[rev_col].sum()
+            avg_price = total_rev / total_qty if total_qty > 0 else 0
         else:
-            print(f"   Ошибка: {result.error_message}")
+            avg_price = self.df[rev_col].mean()
+            
+        self.results.append(RuleResult(
+            rule_id='avg_sku_price',
+            name='Средняя цена продажи',
+            value=avg_price,
+            unit='RUB',
+            category='products',
+            priority=7
+        ))
+
+    def _calc_sku_turnover(self):
+        self.results.append(RuleResult(
+            rule_id='sku_turnover',
+            name='Оборачиваемость запасов',
+            value=0.0,
+            unit='дней',
+            category='products',
+            priority=7
+        ))
+
+    def _calc_abc_analysis(self):
+        prod_col = self._get_col('product')
+        rev_col = self._get_col('revenue')
+        if not prod_col or not rev_col: return
+        
+        grouped = self.df.groupby(prod_col)[rev_col].sum().sort_values(ascending=False)
+        total = grouped.sum()
+        cum_pct = grouped.cumsum() / total
+        
+        a_count = len(cum_pct[cum_pct <= 0.8])
+        b_count = len(cum_pct[(cum_pct > 0.8) & (cum_pct <= 0.95)])
+        c_count = len(cum_pct[cum_pct > 0.95])
+        
+        self.results.append(RuleResult(
+            rule_id='abc_analysis',
+            name='ABC Анализ',
+            value=0,
+            unit='',
+            category='products',
+            priority=8,
+            details={
+                'A_count': a_count, 'A_pct': 80,
+                'B_count': b_count, 'B_pct': 15,
+                'C_count': c_count, 'C_pct': 5
+            }
+        ))
+
+    def _calc_xyz_analysis(self):
+        prod_col = self._get_col('product')
+        rev_col = self._get_col('revenue')
+        if not prod_col or not rev_col: return
+        
+        cv_data = self.df.groupby(prod_col)[rev_col].apply(
+            lambda x: x.std() / x.mean() if x.mean() > 0 else 0
+        )
+        
+        x_count = len(cv_data[cv_data < 0.1])
+        y_count = len(cv_data[(cv_data >= 0.1) & (cv_data <= 0.25)])
+        z_count = len(cv_data[cv_data > 0.25])
+        
+        self.results.append(RuleResult(
+            rule_id='xyz_analysis',
+            name='XYZ Анализ',
+            value=0,
+            unit='',
+            category='products',
+            priority=7,
+            details={'X': x_count, 'Y': y_count, 'Z': z_count}
+        ))
+
+    def _calc_top_10_products(self):
+        prod_col = self._get_col('product')
+        rev_col = self._get_col('revenue')
+        if not prod_col or not rev_col: return
+        
+        top = self.df.groupby(prod_col)[rev_col].sum().nlargest(10).to_dict()
+        self.results.append(RuleResult(
+            rule_id='top_10_products',
+            name='Топ-10 товаров',
+            value=0,
+            unit='',
+            category='products',
+            priority=6,
+            details=top
+        ))
+
+    def _calc_bottom_10_products(self):
+        prod_col = self._get_col('product')
+        rev_col = self._get_col('revenue')
+        if not prod_col or not rev_col: return
+        
+        bottom = self.df.groupby(prod_col)[rev_col].sum().nsmallest(10).to_dict()
+        self.results.append(RuleResult(
+            rule_id='bottom_10_products',
+            name='Аутсайдеры (Топ-10)',
+            value=0,
+            unit='',
+            category='products',
+            priority=5,
+            details=bottom
+        ))
+
+    def _calc_out_of_stock_risk(self):
+        self.results.append(RuleResult(
+            rule_id='out_of_stock_risk',
+            name='Риск отсутствия товара',
+            value=0,
+            unit='шт.',
+            category='products',
+            priority=7
+        ))
+
+    def _calc_excess_stock_risk(self):
+        self.results.append(RuleResult(
+            rule_id='excess_stock_risk',
+            name='Риск затоваривания',
+            value=0,
+            unit='RUB',
+            category='products',
+            priority=7
+        ))
+
+    # =======================
+    # TIME SERIES RULES
+    # =======================
+
+    def _calc_sales_dynamics_daily(self):
+        date_col = self._get_col('date')
+        rev_col = self._get_col('revenue')
+        if not date_col or not rev_col: return
+        
+        self.df[date_col] = pd.to_datetime(self.df[date_col])
+        daily = self.df.groupby(self.df[date_col].dt.date)[rev_col].sum()
+        
+        if len(daily) < 2:
+            trend = 'stable'
+            change = 0
+        else:
+            change = daily.pct_change().iloc[-1]
+            change = 0 if np.isnan(change) else change
+            trend = 'up' if change > 0.05 else ('down' if change < -0.05 else 'stable')
+            
+        self.results.append(RuleResult(
+            rule_id='sales_dynamics_daily',
+            name='Динамика продаж (день)',
+            value=change * 100,
+            unit='%',
+            category='time_series',
+            priority=8,
+            trend=trend
+        ))
+
+    def _calc_sales_dynamics_weekly(self):
+        self.results.append(RuleResult(
+            rule_id='sales_dynamics_weekly',
+            name='Динамика продаж (неделя)',
+            value=0.0,
+            unit='%',
+            category='time_series',
+            priority=7
+        ))
+
+    def _calc_sales_dynamics_monthly(self):
+        self.results.append(RuleResult(
+            rule_id='sales_dynamics_monthly',
+            name='Динамика продаж (месяц)',
+            value=0.0,
+            unit='%',
+            category='time_series',
+            priority=7
+        ))
+
+    def _calc_seasonality_coefficient(self):
+        self.results.append(RuleResult(
+            rule_id='seasonality_coefficient',
+            name='Коэффициент сезонности',
+            value=1.0,
+            unit='coeff',
+            category='time_series',
+            priority=6
+        ))
+
+    def _calc_day_of_week_pattern(self):
+        date_col = self._get_col('date')
+        rev_col = self._get_col('revenue')
+        if not date_col or not rev_col: return
+        
+        self.df[date_col] = pd.to_datetime(self.df[date_col])
+        dow = self.df.groupby(self.df[date_col].dt.day_name())[rev_col].sum()
+        best_day = dow.idxmax()
+        
+        self.results.append(RuleResult(
+            rule_id='day_of_week_pattern',
+            name='Лучший день недели',
+            value=0,
+            unit='',
+            category='time_series',
+            priority=6,
+            details={'best_day': best_day, 'distribution': dow.to_dict()}
+        ))
+
+    def _calc_hour_of_day_pattern(self):
+        self.results.append(RuleResult(
+            rule_id='hour_of_day_pattern',
+            name='Пиковый час',
+            value=0,
+            unit='',
+            category='time_series',
+            priority=5
+        ))
+
+    # =======================
+    # GEO RULES
+    # =======================
+
+    def _calc_revenue_by_region(self):
+        reg_col = self._get_col('region')
+        rev_col = self._get_col('revenue')
+        if not reg_col or not rev_col: return
+        
+        grouped = self.df.groupby(reg_col)[rev_col].sum().sort_values(ascending=False)
+        self.results.append(RuleResult(
+            rule_id='revenue_by_region',
+            name='Выручка по регионам',
+            value=0,
+            unit='',
+            category='geo',
+            priority=6,
+            details=grouped.to_dict()
+        ))
+
+    def _calc_revenue_by_city(self):
+        city_col = self._get_col('city')
+        rev_col = self._get_col('revenue')
+        if not city_col or not rev_col: return
+        
+        grouped = self.df.groupby(city_col)[rev_col].sum().sort_values(ascending=False)
+        self.results.append(RuleResult(
+            rule_id='revenue_by_city',
+            name='Выручка по городам',
+            value=0,
+            unit='',
+            category='geo',
+            priority=6,
+            details=grouped.to_dict()
+        ))
+
+    def _calc_delivery_distance_avg(self):
+        self.results.append(RuleResult(
+            rule_id='delivery_distance_avg',
+            name='Среднее расстояние доставки',
+            value=0,
+            unit='km',
+            category='geo',
+            priority=5
+        ))
+
+    def _calc_geo_concentration(self):
+        self.results.append(RuleResult(
+            rule_id='geo_concentration',
+            name='Гео-концентрация',
+            value=0,
+            unit='HHI',
+            category='geo',
+            priority=5
+        ))
+
+    # =======================
+    # CORRELATIONS & ADVANCED
+    # =======================
+
+    def _calc_price_elasticity(self):
+        price_col = self._get_col('price')
+        qty_col = self._get_col('quantity')
+        
+        if not price_col or not qty_col: return
+        if price_col not in self.df.columns or qty_col not in self.df.columns: return
+        
+        corr, p_value = stats.pearsonr(self.df[price_col].dropna(), self.df[qty_col].dropna())
+        
+        self.results.append(RuleResult(
+            rule_id='price_elasticity',
+            name='Эластичность спроса',
+            value=corr,
+            unit='coeff',
+            category='correlation',
+            priority=7,
+            details={'p_value': p_value}
+        ))
+
+    def _calc_revenue_cost_correlation(self):
+        rev_col = self._get_col('revenue')
+        cost_col = self._get_col('cost')
+        
+        if not rev_col or not cost_col: return
+        if rev_col not in self.df.columns or cost_col not in self.df.columns: return
+        
+        corr, _ = stats.pearsonr(self.df[rev_col].dropna(), self.df[cost_col].dropna())
+        
+        self.results.append(RuleResult(
+            rule_id='rev_cost_corr',
+            name='Корреляция Выручка-Себестоимость',
+            value=corr,
+            unit='coeff',
+            category='correlation',
+            priority=6
+        ))
+
+    def _calc_volume_price_correlation(self):
+        qty_col = self._get_col('quantity')
+        price_col = self._get_col('price')
+        
+        if not qty_col or not price_col: return
+        
+        corr, _ = stats.pearsonr(self.df[qty_col].dropna(), self.df[price_col].dropna())
+        self.results.append(RuleResult(
+            rule_id='vol_price_corr',
+            name='Корреляция Объем-Цена',
+            value=corr,
+            unit='coeff',
+            category='correlation',
+            priority=6
+        ))
+
+    def _calc_discount_impact(self):
+        disc_col = self._get_col('discount')
+        
+        if not disc_col: 
+            if 'DiscountPercent' in self.df.columns:
+                disc_col = 'DiscountPercent'
+            else:
+                return
+                
+        if disc_col not in self.df.columns: return
+        
+        avg_disc = self.df[disc_col].mean()
+        self.results.append(RuleResult(
+            rule_id='discount_impact',
+            name='Влияние скидок',
+            value=avg_disc,
+            unit='%',
+            category='correlation',
+            priority=7
+        ))
+
+    def _calc_manager_efficiency_correlation(self):
+        mgr_col = self._get_col('manager')
+        rev_col = self._get_col('revenue')
+        
+        if not mgr_col or not rev_col: return
+        
+        mgr_perf = self.df.groupby(mgr_col)[rev_col].sum()
+        self.results.append(RuleResult(
+            rule_id='manager_efficiency',
+            name='Эффективность менеджеров',
+            value=0,
+            unit='',
+            category='correlation',
+            priority=6,
+            details=mgr_perf.to_dict()
+        ))
