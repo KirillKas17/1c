@@ -1,0 +1,45 @@
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: 'localhost:587'
+  smtp_from: 'alertmanager@example.com'
+
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+  receiver: 'default-receiver'
+  routes:
+    - match:
+        severity: critical
+      receiver: 'critical-receiver'
+    - match:
+        severity: warning
+      receiver: 'warning-receiver'
+
+receivers:
+  - name: 'default-receiver'
+    email_configs:
+      - to: 'admin@example.com'
+        send_resolved: true
+
+  - name: 'critical-receiver'
+    email_configs:
+      - to: 'oncall@example.com'
+        send_resolved: true
+        html: '{{ template "email.default.html" . }}'
+
+  - name: 'warning-receiver'
+    email_configs:
+      - to: 'team@example.com'
+        send_resolved: true
+
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
