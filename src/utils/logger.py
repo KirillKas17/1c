@@ -90,19 +90,29 @@ logger = setup_logger()
 
 def log_error(error: Exception, context: Optional[Dict[str, Any]] = None):
     """Удобная функция для логирования ошибок с контекстом."""
-    extra_context = context or {}
-    logger.error(
-        f"{error.__class__.__name__}: {str(error)}",
-        exc_info=True,
-        extra=extra_context
-    )
+    if context:
+        logger.error(
+            f"{error.__class__.__name__}: {str(error)}",
+            exc_info=True
+        )
+        for k, v in context.items():
+            logger.info(f"Context: {k}={v}")
+    else:
+        logger.error(
+            f"{error.__class__.__name__}: {str(error)}",
+            exc_info=True
+        )
 
 def log_info(message: str, context: Optional[Dict[str, Any]] = None):
     """Удобная функция для информационных логов."""
-    extra_context = context or {}
-    logger.info(message, extra=extra_context)
+    logger.info(message)
+    if context:
+        for k, v in context.items():
+            logger.info(f"Context: {k}={v}")
 
 def log_warning(message: str, context: Optional[Dict[str, Any]] = None):
     """Удобная функция для предупреждений."""
-    extra_context = context or {}
-    logger.warning(message, extra=extra_context)
+    logger.warning(message)
+    if context:
+        for k, v in context.items():
+            logger.info(f"Context: {k}={v}")
