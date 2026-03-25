@@ -20,36 +20,38 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-
-# Testing
-.coverage
-coverage/
-htmlcov/
-.nosetests
-.unit_test_results.xml
-.pytest_cache/
-.hypothesis/
+MANIFEST
 
 # Database
-*.db
-*.db-journal
+processing_history.db
 
 # Environment
 .env
 .env.local
 .env.*
+.env~*
 .venv/
 venv/
 ENV/
+
+# Logs
+*.log
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*.tmp
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Coverage
+.coverage
+htmlcov/
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
 ```

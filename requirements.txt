@@ -65,3 +65,5 @@ loguru==0.7.2
 pyinstaller==6.2.0
 eel
 requests>=2.31.0
+asyncpg>=0.29.0
+prometheus-fastapi-instrumentator>=5.4.0
