@@ -6,6 +6,7 @@ role-based access control, and session management.
 
 import jwt
 import datetime
+from datetime import timezone
 import os
 import hashlib
 import secrets
@@ -93,7 +94,7 @@ class JWTManager:
         Returns:
             Encoded JWT access token
         """
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(timezone.utc)
         payload = {
             'user_id': user_id,
             'username': username,
@@ -123,7 +124,7 @@ class JWTManager:
         Returns:
             Encoded JWT refresh token
         """
-        now = datetime.datetime.utcnow()
+        now = datetime.datetime.now(timezone.utc)
         payload = {
             'user_id': user_id,
             'username': username,

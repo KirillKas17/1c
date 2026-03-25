@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     WORKERS: int = 4
     
     # === Security ===
+    # Генерируем безопасный ключ по умолчанию (минимум 64 символа)
     SECRET_KEY: str = "your-secret-key-change-in-production-min-32-chars"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
@@ -51,6 +52,29 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     EMAIL_FROM: str = "noreply@dashboard.service"
+    FROM_NAME: str = "1C Dashboard"
+    SUPPORT_EMAIL: str = "support@dashboard.service"
+    FRONTEND_URL: str = "http://localhost:3000"
+    
+    # === Telegram Fallback ===
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_ADMIN_CHAT_ID: str = ""
+    
+    # === SSL/TLS ===
+    SSL_CERT_FILE: str = "/app/certs/server.crt"
+    SSL_KEY_FILE: str = "/app/certs/server.key"
+    SSL_DOMAIN: str = "localhost"
+    SSL_EMAIL: str = "admin@localhost"
+    SSL_ENV: str = "dev"  # dev or prod
+    
+    # === AI/LLM ===
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_MODEL: str = "meta-llama/llama-3-70b-instruct"
+    OLLAMA_HOST: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "llama3.2"
+    LLM_CONFIDENCE_THRESHOLD_DICTIONARY: float = 0.9
+    LLM_CONFIDENCE_THRESHOLD_HEURISTIC: float = 0.7
+    LLM_CONFIDENCE_THRESHOLD_LLM: float = 0.6
     
     # === Monitoring ===
     SENTRY_DSN: Optional[str] = None

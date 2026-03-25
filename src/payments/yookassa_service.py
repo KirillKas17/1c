@@ -7,7 +7,7 @@ import uuid
 import hashlib
 import hmac
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, Tuple
 from decimal import Decimal
 import requests
@@ -50,8 +50,8 @@ class Payment(Base):
     status = Column(Enum(PaymentStatus), default=PaymentStatus.PENDING)
     description = Column(Text)
     payment_metadata = Column('metadata', Text)  # JSON строка с дополнительными данными
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=datetime.now(timezone.utc), onupdate=datetime.now(timezone.utc))
     expires_at = Column(DateTime)
     is_test = Column(Boolean, default=False)
     
@@ -76,7 +76,7 @@ class Subscription(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id'), unique=True, nullable=False)
     tier = Column(Enum(SubscriptionTier), default=SubscriptionTier.FREE)
-    start_date = Column(DateTime, default=datetime.utcnow)
+    start_date = Column(DateTime, default=datetime.now(timezone.utc))
     end_date = Column(DateTime)
     is_active = Column(Boolean, default=False)
     auto_renew = Column(Boolean, default=False)
@@ -97,7 +97,7 @@ class Subscription(Base):
     def days_remaining(self) -> int:
         if not self.end_date:
             return 0
-        delta = self.end_date - datetime.utcnow()
+        delta = self.end_date - datetime.now(timezone.utc)
         return max(0, delta.days)
 
 
@@ -314,11 +314,11 @@ class YooKassaPaymentService:
         
         subscription.tier = tier
         subscription.is_active = True
-        subscription.start_date = datetime.utcnow()
+        subscription.start_date = datetime.now(timezone.utc)
         
         # Устанавливаем дату окончания в зависимости от тарифа
         if tier != SubscriptionTier.FREE:
-            subscription.end_date = datetime.utcnow() + timedelta(days=30)
+            subscription.end_date = datetime.now(timezone.utc) + timedelta(days=30)
             subscription.auto_renew = True
         
         # Обновляем лимиты пользователя
@@ -402,7 +402,7 @@ def create_payment(tier: str):
         amount=tariff['price'],
         description=f"Подписка '{tariff['name']}'",
         payment_metadata=json.dumps({'subscription_tier': tier}),
-        expires_at=datetime.utcnow() + timedelta(minutes=30)  # Платеж действителен 30 минут
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=30)  # Платеж действителен 30 минут
     )
     db.session.add(payment)
     db.session.commit()

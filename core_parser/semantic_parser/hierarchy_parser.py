@@ -139,7 +139,7 @@ class HierarchyParser:
         
         self.level_patterns = {}
         for level, markers in self.LEVEL_MARKERS.items():
-            pattern = r'\\b(' + '|'.join(markers) + r')\\b'
+            pattern = r'\b(' + '|'.join(markers) + r')\b'
             self.level_patterns[level] = re.compile(pattern, re.IGNORECASE)
         
         self.counterparty_patterns = {}
@@ -316,7 +316,7 @@ class HierarchyParser:
         # Повышаем если есть явный маркер
         if level in self.level_patterns:
             if self.level_patterns[level].search(text):
-                confidence += 0.4  # Увеличили с 0.3 до 0.4 для большей уверенности
+                confidence += 0.5  # Увеличили с 0.3 до 0.5 для большей уверенности
         
         # Повышаем если это город из списка
         if level == 'city':

@@ -4,7 +4,7 @@ Login, logout, register, token refresh, and user management endpoints
 """
 
 from flask import Blueprint, request, jsonify, g
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 import re
 from .jwt_auth import JWTManager, hash_password, verify_password, UserRole
@@ -110,7 +110,7 @@ def register():
         'password_hash': password_hash,
         'salt': salt,
         'role': 'user',
-        'created_at': datetime.utcnow().isoformat()
+        'created_at': datetime.now(timezone.utc).isoformat()
     }
     
     return jsonify({

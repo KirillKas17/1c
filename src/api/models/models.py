@@ -1,7 +1,7 @@
 """
 Database models for 1C Dashboard Service.
 """
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, ForeignKey, Text, JSON, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Float, ForeignKey, Text, JSON, Enum as SQLEnum, Date
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from datetime import datetime
@@ -19,27 +19,43 @@ class SubscriptionTier(enum.Enum):
 
 
 class User(Base):
-    """User model."""
+    """User model with advanced trial and subscription management."""
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(255), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=True)
+    company_name = Column(String(255), nullable=True)  # For B2B
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     
     # Subscription info
-    subscription_tier = Column(SQLEnum(SubscriptionTier), default=SubscriptionTier.FREE)
+    subscription_tier = Column(SQLEnum(SubscriptionTier), default=SubscriptionTier.TRIAL)
     subscription_expires_at = Column(DateTime(timezone=True), nullable=True)
     trial_started_at = Column(DateTime(timezone=True), nullable=True)
+    trial_ends_at = Column(DateTime(timezone=True), nullable=True)  # Explicit end date
+    
+    # Usage tracking for trial limits (anti-abuse)
+    reports_generated_count = Column(Integer, default=0)  # Total reports in trial
+    max_reports_trial = Column(Integer, default=10)       # Limit: 10 reports max
+    templates_saved_count = Column(Integer, default=0)    # Saved templates
+    max_templates_trial = Column(Integer, default=3)      # Limit: 3 templates max
+    files_uploaded_count = Column(Integer, default=0)     # Files uploaded
+    max_files_trial = Column(Integer, default=5)          # Limit: 5 files max
+    
+    # Anti-abuse: track daily usage to prevent "one-day sprint"
+    last_report_generated_at = Column(DateTime(timezone=True), nullable=True)
+    daily_report_count = Column(Integer, default=0)
+    daily_report_reset_date = Column(Date, nullable=True)  # Reset counter daily
     
     # Relationships
     files = relationship("UploadedFile", back_populates="user", cascade="all, delete-orphan")
     dashboards = relationship("Dashboard", back_populates="user", cascade="all, delete-orphan")
     api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
+    templates = relationship("ReportTemplate", back_populates="user", cascade="all, delete-orphan")
 
 
 class UploadedFile(Base):
@@ -154,3 +170,27 @@ class AuditLog(Base):
     details = Column(JSON, nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReportTemplate(Base):
+    """Saved report template for reuse."""
+    __tablename__ = "report_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    
+    # Template configuration
+    template_config = Column(JSON, nullable=False, default=dict)  # Layout, charts, filters
+    source_file_structure = Column(JSON, nullable=True)  # Expected column structure
+    
+    # Usage stats
+    times_used = Column(Integer, default=0)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="templates")
