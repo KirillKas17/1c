@@ -5,7 +5,7 @@ Supports PostgreSQL for production and SQLite for local testing.
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, JSON, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 
 Base = declarative_base()
@@ -16,7 +16,7 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     email = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now(timezone.utc))
     
     uploads = relationship("FileUpload", back_populates="user")
     mappings = relationship("FieldMapping", back_populates="user")
@@ -28,7 +28,7 @@ class FileUpload(Base):
     user_id = Column(Integer, ForeignKey('users.id'))
     filename = Column(String, nullable=False)
     file_path = Column(String, nullable=False)
-    uploaded_at = Column(DateTime, default=datetime.utcnow)
+    uploaded_at = Column(DateTime, default=datetime.now(timezone.utc))
     file_size_bytes = Column(Integer)
     row_count = Column(Integer)
     industry_profile = Column(String, default='retail')
@@ -47,7 +47,7 @@ class FieldMapping(Base):
     mapped_field = Column(String, nullable=False)
     confidence_score = Column(Float)
     is_user_corrected = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now(timezone.utc))
     
     user = relationship("User", back_populates="mappings")
 
@@ -56,7 +56,7 @@ class DashboardResult(Base):
     
     id = Column(Integer, primary_key=True)
     upload_id = Column(Integer, ForeignKey('file_uploads.id'))
-    generated_at = Column(DateTime, default=datetime.utcnow)
+    generated_at = Column(DateTime, default=datetime.now(timezone.utc))
     metrics_json = Column(JSON)  # Stores calculated KPIs
     forecast_json = Column(JSON)  # Stores forecast data
     components_config = Column(JSON)  # UI layout config

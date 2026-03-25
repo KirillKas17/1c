@@ -4,7 +4,7 @@
 
 import unittest
 from unittest.mock import Mock, patch, MagicMock
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import sys
 import os
@@ -211,10 +211,10 @@ class TestSubscriptionModel(unittest.TestCase):
         """Проверка расчета оставшихся дней"""
         # Мокируем объект подписки
         sub = Mock(spec=Subscription)
-        sub.end_date = datetime.utcnow() + timedelta(days=15)
+        sub.end_date = datetime.now(timezone.utc) + timedelta(days=15)
         
         # Реализуем property вручную для теста
-        delta = sub.end_date - datetime.utcnow()
+        delta = sub.end_date - datetime.now(timezone.utc)
         days = max(0, delta.days)
         
         self.assertGreaterEqual(days, 14)
@@ -222,8 +222,8 @@ class TestSubscriptionModel(unittest.TestCase):
     
     def test_days_remaining_expired(self):
         """Проверка для истекшей подписки"""
-        end_date = datetime.utcnow() - timedelta(days=5)
-        delta = end_date - datetime.utcnow()
+        end_date = datetime.now(timezone.utc) - timedelta(days=5)
+        delta = end_date - datetime.now(timezone.utc)
         days = max(0, delta.days)
         
         self.assertEqual(days, 0)

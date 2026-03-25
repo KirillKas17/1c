@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from contextlib import asynccontextmanager
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 import os
 import uuid
@@ -207,7 +207,7 @@ def register_routes(app: FastAPI):
         return HealthCheck(
             status="healthy",
             version=settings.APP_VERSION,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             services={
                 "api": "ok",
                 "parser": "ok",
@@ -219,9 +219,10 @@ def register_routes(app: FastAPI):
     # === Auth Endpoints ===
     
     @app.post("/api/v1/auth/register", response_model=UserResponse, tags=["Authentication"])
-    async def register(user_data: UserCreate):
-        """Регистрация нового пользователя"""
-        # В production: сохранить в БД, отправить email подтверждения
+    async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
+        """Регистрация нового пользователя с автоматическим запуском триала"""
+        from src.api.services.trial_service import TrialService
+        
         logger.info(f"Регистрация пользователя: {user_data.email}")
         
         auth_manager: JWTAuthManager = app.state.auth_manager
@@ -229,17 +230,52 @@ def register_routes(app: FastAPI):
         # Хэширование пароля
         hashed_password = auth_manager.hash_password(user_data.password)
         
-        # Создание mock пользователя (в production сохранить в БД)
+        # Проверка существования пользователя (в production через БД)
+        # Здесь mock для демонстрации
         user_id = f"user_{hash(user_data.email)}"
+        
+        # Создание пользователя в БД (если подключена)
+        try:
+            new_user = User(
+                email=user_data.email,
+                hashed_password=hashed_password,
+                full_name=user_data.full_name,
+                company_name=user_data.company_name,
+                subscription_tier=SubscriptionTier.TRIAL
+            )
+            db.add(new_user)
+            await db.commit()
+            await db.refresh(new_user)
+            
+            # Запуск триала
+            trial_service = TrialService(db)
+            trial_info = await trial_service.start_trial(new_user)
+            
+            logger.info(f"Триал запущен для пользователя {new_user.id}: {trial_info}")
+            
+        except Exception as e:
+            logger.warning(f"БД недоступна, работа в demo режиме: {e}")
+            # Demo режим без БД
         
         return UserResponse(
             id=hash(user_id) % 100000,
             email=user_data.email,
+            full_name=user_data.full_name,
             company_name=user_data.company_name,
-            subscription_tier="free",
-            subscription_expires=None,
-            created_at=datetime.utcnow(),
-            is_active=True
+            subscription_tier="trial",
+            subscription_expires=datetime.now(timezone.utc).replace(day=datetime.now().day + 14),
+            created_at=datetime.now(timezone.utc),
+            is_active=True,
+            trial_info={
+                "trial_started": datetime.now(timezone.utc).isoformat(),
+                "trial_ends": (datetime.now(timezone.utc).replace(day=datetime.now().day + 14)).isoformat(),
+                "limits": {
+                    "reports_total": 10,
+                    "templates": 3,
+                    "files": 5,
+                    "reports_per_day": 3
+                }
+            } if settings.DEBUG else None
         )
     
     @app.post("/api/v1/auth/login", response_model=Token, tags=["Authentication"])
@@ -313,8 +349,8 @@ def register_routes(app: FastAPI):
             email=current_user["email"],
             company_name="Demo Company",
             subscription_tier="starter",
-            subscription_expires=datetime.utcnow(),
-            created_at=datetime.utcnow(),
+            subscription_expires=datetime.now(timezone.utc),
+            created_at=datetime.now(timezone.utc),
             is_active=True
         )
     
@@ -376,7 +412,7 @@ def register_routes(app: FastAPI):
                 "columns_count": len(result["data"].columns) if len(result["data"]) > 0 else 0,
                 "detected_format": file_ext[1:],
                 "ai_structure": ai_result,
-                "upload_timestamp": datetime.utcnow(),
+                "upload_timestamp": datetime.now(timezone.utc),
                 "status": "ready"
             }
             
@@ -520,7 +556,7 @@ def register_routes(app: FastAPI):
                 "file_id": file_id,
                 "user_id": current_user["user_id"],
                 "title": "Аналитический дашборд",
-                "created_at": datetime.utcnow(),
+                "created_at": datetime.now(timezone.utc),
                 "metrics": metrics,
                 "charts": ai_result.get("recommended_charts", []),
                 "forecasts": forecasts,
@@ -603,7 +639,7 @@ def register_routes(app: FastAPI):
         logger.info(f"Создание платежа для {current_user['email']}, тариф: {plan_tier}")
         
         # В production: создание платежа через YooKassa API
-        payment_id = f"pay_{datetime.utcnow().timestamp()}"
+        payment_id = f"pay_{datetime.now(timezone.utc).timestamp()}"
         
         prices = {"starter": 990, "professional": 4900, "enterprise": 19900}
         amount = prices.get(plan_tier, 990)

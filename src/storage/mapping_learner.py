@@ -13,7 +13,7 @@ import json
 import hashlib
 import sqlite3
 from typing import Dict, List, Optional, Any, Tuple
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import logging
 
@@ -156,7 +156,7 @@ class MappingLearner:
                 # Обновление счётчика использований
                 cursor.execute(
                     "UPDATE file_signatures SET usage_count = usage_count + 1, updated_at = ? WHERE id = ?",
-                    (datetime.utcnow(), signature_id)
+                    (datetime.now(timezone.utc), signature_id)
                 )
             else:
                 # Создание новой сигнатуры

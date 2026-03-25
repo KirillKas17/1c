@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Предупреждение о лимитах</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .warning-box {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        .progress-bar {
+            background: #e9ecef;
+            border-radius: 10px;
+            height: 20px;
+            margin: 15px 0;
+            overflow: hidden;
+        }
+        .progress-fill {
+            background: linear-gradient(90deg, #ffc107, #ff9800);
+            height: 100%;
+            transition: width 0.3s;
+        }
+        .cta-button {
+            display: inline-block;
+            background: #28a745;
+            color: white;
+            padding: 12px 30px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            font-size: 14px;
+            color: #666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 style="color: #ffc107;">⚠️ Внимание, {{ user_name }}!</h1>
+        
+        <p>Вы использовали <strong>{{ usage_percent }}%</strong> своего триального лимита.</p>
+        
+        <div class="warning-box">
+            <strong>Использование отчетов:</strong>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: {{ usage_percent }}%;"></div>
+            </div>
+            <p>{{ reports_used }} из {{ reports_limit }} отчетов</p>
+        </div>
+        
+        <p>У вас еще есть <strong>{{ days_left }} дн.</strong> триального периода, но мы рекомендуем не откладывать.</p>
+        
+        <p><strong>Что будет дальше?</strong></p>
+        <ul>
+            <li>При достижении 100% лимита создание отчетов станет недоступным</li>
+            <li>Все ваши данные и шаблоны сохранятся</li>
+            <li>Вы сможете в любой момент перейти на платный тариф</li>
+        </ul>
+        
+        <p style="text-align: center;">
+            <a href="{{ upgrade_url }}" class="cta-button">Перейти на платный тариф →</a>
+        </p>
+        
+        <p><strong>Преимущества платных тарифов:</strong></p>
+        <ul>
+            <li>✅ Без ограничений на количество отчетов</li>
+            <li>✅ Больше шаблонов и файлов</li>
+            <li>✅ Приоритетная поддержка</li>
+            <li>✅ Доступ к расширенной аналитике</li>
+        </ul>
+        
+        <p style="text-align: center;">
+            <a href="{{ pricing_url }}" style="color: #007bff;">Посмотреть все тарифы →</a>
+        </p>
+        
+        <div class="footer">
+            <p>С уважением,<br>Команда 1C Dashboard</p>
+        </div>
+    </div>
+</body>
+</html>

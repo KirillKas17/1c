@@ -12,12 +12,17 @@ JWT Authentication модуль для API.
 import jwt
 import hashlib
 import bcrypt
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, Tuple
 from functools import wraps
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def get_utc_now() -> datetime:
+    """Получение текущего UTC времени (без deprecated utcnow)."""
+    return datetime.now(timezone.utc)
 
 
 class JWTAuthManager:
@@ -67,7 +72,7 @@ class JWTAuthManager:
     
     def create_access_token(self, user_id: str, email: str, role: str = "user") -> str:
         """Создание access токена."""
-        expire = datetime.utcnow() + timedelta(minutes=self.access_token_expire_minutes)
+        expire = get_utc_now() + timedelta(minutes=self.access_token_expire_minutes)
         
         payload = {
             "sub": user_id,
@@ -75,8 +80,8 @@ class JWTAuthManager:
             "role": role,
             "type": "access",
             "exp": expire,
-            "iat": datetime.utcnow(),
-            "jti": hashlib.md5(f"{user_id}{datetime.utcnow()}".encode()).hexdigest()
+            "iat": get_utc_now(),
+            "jti": hashlib.md5(f"{user_id}{get_utc_now()}".encode()).hexdigest()
         }
         
         token = jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
@@ -85,14 +90,14 @@ class JWTAuthManager:
     
     def create_refresh_token(self, user_id: str) -> str:
         """Создание refresh токена."""
-        expire = datetime.utcnow() + timedelta(days=self.refresh_token_expire_days)
+        expire = get_utc_now() + timedelta(days=self.refresh_token_expire_days)
         
         payload = {
             "sub": user_id,
             "type": "refresh",
             "exp": expire,
-            "iat": datetime.utcnow(),
-            "jti": hashlib.md5(f"{user_id}{datetime.utcnow()}{expire}".encode()).hexdigest()
+            "iat": get_utc_now(),
+            "jti": hashlib.md5(f"{user_id}{get_utc_now()}{expire}".encode()).hexdigest()
         }
         
         token = jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
@@ -100,7 +105,7 @@ class JWTAuthManager:
         # Сохраняем токен в хранилище
         self.token_store[token] = {
             "user_id": user_id,
-            "created_at": datetime.utcnow(),
+            "created_at": get_utc_now(),
             "expires_at": expire
         }
         
@@ -133,7 +138,7 @@ class JWTAuthManager:
             
             # Проверка срока действия
             exp = payload.get("exp")
-            if exp and datetime.utcfromtimestamp(exp) < datetime.utcnow():
+            if exp and datetime.fromtimestamp(exp, tz=timezone.utc) < get_utc_now():
                 logger.warning("Токен истёк")
                 return None
             
@@ -202,7 +207,7 @@ class JWTAuthManager:
         Returns:
             True если запрос разрешён, False если превышен лимит
         """
-        now = datetime.utcnow()
+        now = get_utc_now()
         minute_ago = now - timedelta(minutes=1)
         
         # Получение истории запросов пользователя

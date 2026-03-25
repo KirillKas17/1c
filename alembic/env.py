@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import models
 from src.api.db.database import Base
-from src.api.models.models import User, UploadedFile, Dashboard, Forecast, APIKey, AuditLog
+from src.api.models.models import User, UploadedFile, Dashboard, Forecast, APIKey, AuditLog, ReportTemplate
 
 # this is the Alembic Config object
 config = context.config

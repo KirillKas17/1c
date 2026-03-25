@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Подтверждение подписки</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .success-box {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .success-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        .plan-card {
+            background: #f8f9fa;
+            border: 2px solid #28a745;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .plan-name {
+            font-size: 24px;
+            font-weight: bold;
+            color: #28a745;
+        }
+        .plan-price {
+            font-size: 32px;
+            font-weight: bold;
+            color: #333;
+            margin: 10px 0;
+        }
+        .info-table {
+            width: 100%;
+            margin: 20px 0;
+            border-collapse: collapse;
+        }
+        .info-table td {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .info-table td:first-child {
+            font-weight: bold;
+            color: #666;
+        }
+        .cta-button {
+            display: inline-block;
+            background: #007bff;
+            color: white;
+            padding: 12px 30px;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+            font-size: 14px;
+            color: #666;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-box">
+            <div class="success-icon">✅</div>
+            <h1 style="color: #28a745; margin: 10px 0;">Подписка активирована!</h1>
+            <p>Спасибо за оплату, {{ user_name }}!</p>
+        </div>
+        
+        <p>Ваша подписка успешно оформлена. Теперь у вас есть полный доступ ко всем функциям 1C Dashboard.</p>
+        
+        <div class="plan-card">
+            <div class="plan-name">{{ plan_name }}</div>
+            <div class="plan-price">{{ price }}{{ currency }}/мес</div>
+            <p style="color: #666; margin: 10px 0 0 0;">
+                Следующее списание: <strong>{{ billing_date }}</strong>
+            </p>
+        </div>
+        
+        <table class="info-table">
+            <tr>
+                <td>План:</td>
+                <td><strong>{{ plan_name }}</strong></td>
+            </tr>
+            <tr>
+                <td>Стоимость:</td>
+                <td><strong>{{ price }}{{ currency}}</strong></td>
+            </tr>
+            <tr>
+                <td>Дата следующего платежа:</td>
+                <td><strong>{{ billing_date }}</strong></td>
+            </tr>
+            <tr>
+                <td>Статус:</td>
+                <td><strong style="color: #28a745;">Активна ✅</strong></td>
+            </tr>
+        </table>
+        
+        <p><strong>Что теперь доступно:</strong></p>
+        <ul>
+            <li>✅ Неограниченное количество отчетов (в рамках тарифа)</li>
+            <li>✅ Расширенное количество шаблонов</li>
+            <li>✅ Приоритетная поддержка</li>
+            <li>✅ Все функции AI анализа</li>
+            <li>✅ Экспорт в PDF и PowerPoint без ограничений</li>
+        </ul>
+        
+        <p style="text-align: center;">
+            <a href="{{ dashboard_url }}" class="cta-button">Перейти в дашборд →</a>
+        </p>
+        
+        <p style="text-align: center;">
+            <a href="{{ invoice_url }}" style="color: #007bff;">Скачать счет →</a>
+        </p>
+        
+        <div class="footer">
+            <p>С уважением,<br>Команда 1C Dashboard</p>
+            <p style="font-size: 12px; color: #999;">
+                Это письмо отправлено автоматически. Пожалуйста, не отвечайте на него.<br>
+                Вопросы по оплате? Пишите на <a href="mailto:billing@1c-dashboard.ru">billing@1c-dashboard.ru</a>
+            </p>
+        </div>
+    </div>
+</body>
+</html>
