@@ -1,124 +1,90 @@
 #!/bin/bash
-# 🛡️ SSL/HTTPS Certificate Setup Script for 1C Dashboard Service
-# Supports: Self-signed (dev) + Let's Encrypt (prod)
+# SSL Certificate Setup Script
+# Автоматическая настройка SSL сертификатов для 1C Dashboard Service
 
 set -e
 
-CERT_DIR="/workspace/certs"
-DOMAIN="${SSL_DOMAIN:-localhost}"
-EMAIL="${SSL_EMAIL:-admin@localhost}"
-ENV_TYPE="${SSL_ENV:-dev}" # dev or prod
+echo "🔐 SSL Certificate Setup for 1C Dashboard Service"
+echo "=================================================="
 
-echo "🔐 SSL Setup Script Started"
-echo "   Domain: $DOMAIN"
-echo "   Email: $EMAIL"
-echo "   Environment: $ENV_TYPE"
-echo ""
-
-# Create certs directory
+CERT_DIR="/workspace/ssl"
 mkdir -p "$CERT_DIR"
-chmod 700 "$CERT_DIR"
 
-if [ "$ENV_TYPE" = "dev" ]; then
-    echo "📝 Generating self-signed certificate for development..."
+# Проверка: используем ли мы Let's Encrypt или самоподписанные сертификаты
+if [ "$USE_LETS_ENCRYPT" = "true" ]; then
+    echo "🌟 Настройка Let's Encrypt..."
     
-    # Generate private key
-    openssl genrsa -out "$CERT_DIR/server.key" 2048
-    chmod 600 "$CERT_DIR/server.key"
-    
-    # Generate self-signed certificate
-    openssl req -new -x509 \
-        -key "$CERT_DIR/server.key" \
-        -out "$CERT_DIR/server.crt" \
-        -days 365 \
-        -subj "/C=RU/ST=Moscow/L=Moscow/O=1C Dashboard/CN=$DOMAIN" \
-        -addext "subjectAltName=DNS:$DOMAIN,DNS:localhost,IP:127.0.0.1"
-    
-    echo "✅ Self-signed certificate generated successfully!"
-    echo ""
-    echo "📁 Certificate files:"
-    echo "   Key:  $CERT_DIR/server.key"
-    echo "   Cert: $CERT_DIR/server.crt"
-    echo ""
-    echo "⚠️  BROWSER WARNING:"
-    echo "   Self-signed certificates will show security warnings in browsers."
-    echo "   This is NORMAL for development. Click 'Advanced' → 'Proceed' to continue."
-    echo ""
-    echo "🔧 To trust this certificate system-wide (optional):"
-    echo "   sudo cp $CERT_DIR/server.crt /usr/local/share/ca-certificates/"
-    echo "   sudo update-ca-certificates"
-    
-elif [ "$ENV_TYPE" = "prod" ]; then
-    echo "🌐 Production mode detected"
-    echo ""
-    
-    if command -v certbot &> /dev/null; then
-        echo "✅ Certbot found. Proceeding with Let's Encrypt..."
-        
-        # Stop nginx temporarily if running
-        if systemctl is-active --quiet nginx; then
-            echo "⏸️  Stopping nginx temporarily..."
-            sudo systemctl stop nginx
-        fi
-        
-        # Get certificate from Let's Encrypt
-        sudo certbot certonly \
-            --standalone \
-            --preferred-challenges http \
-            --email "$EMAIL" \
-            --agree-tos \
-            --non-interactive \
-            --domain "$DOMAIN"
-        
-        # Copy certificates to our directory
-        sudo cp "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" "$CERT_DIR/server.crt"
-        sudo cp "/etc/letsencrypt/live/$DOMAIN/privkey.pem" "$CERT_DIR/server.key"
-        sudo chmod 600 "$CERT_DIR/server.key"
-        
-        # Restart nginx
-        if systemctl is-active --quiet nginx; then
-            echo "▶️  Starting nginx..."
-            sudo systemctl start nginx
-        fi
-        
-        echo ""
-        echo "✅ Let's Encrypt certificate installed successfully!"
-        echo ""
-        echo "📁 Certificate files:"
-        echo "   Key:  $CERT_DIR/server.key"
-        echo "   Cert: $CERT_DIR/server.crt"
-        echo ""
-        echo "🔄 Auto-renewal is handled by certbot automatically."
-        echo "   Test renewal with: sudo certbot renew --dry-run"
-        
-    else
-        echo "❌ Certbot not found!"
-        echo ""
-        echo "Please install certbot first:"
-        echo "   Ubuntu/Debian: sudo apt-get install certbot"
-        echo "   CentOS/RHEL:   sudo yum install certbot"
-        echo "   Docker:        Use certbot-docker image"
-        echo ""
-        echo "Or switch to dev mode: export SSL_ENV=dev"
+    if [ -z "$DOMAIN_NAME" ]; then
+        echo "❌ Ошибка: DOMAIN_NAME не установлен для Let's Encrypt"
         exit 1
     fi
+    
+    # Установка Certbot
+    apt-get update -qq
+    apt-get install -y -qq certbot
+    
+    # Получение сертификата
+    certbot certonly --standalone -d "$DOMAIN_NAME" \
+        --email "$ADMIN_EMAIL" \
+        --agree-tos \
+        --non-interactive || {
+        echo "⚠️ Не удалось получить сертификат Let's Encrypt"
+        echo "Проверьте, что домен указывает на этот сервер и порт 80 открыт"
+        exit 1
+    }
+    
+    # Копирование сертификатов
+    cp "/etc/letsencrypt/live/$DOMAIN_NAME/fullchain.pem" "$CERT_DIR/cert.pem"
+    cp "/etc/letsencrypt/live/$DOMAIN_NAME/privkey.pem" "$CERT_DIR/key.pem"
+    
+    echo "✅ Let's Encrypt сертификаты успешно получены!"
+    
 else
-    echo "❌ Invalid environment type: $ENV_TYPE"
-    echo "   Use 'dev' or 'prod'"
-    exit 1
+    echo "📝 Генерация самоподписанных сертификатов (для тестирования)..."
+    
+    # Генерация самоподписанного сертификата
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout "$CERT_DIR/key.pem" \
+        -out "$CERT_DIR/cert.pem" \
+        -subj "/C=RU/ST=Moscow/L=Moscow/O=1C Dashboard/CN=localhost" \
+        -addext "subjectAltName=DNS:localhost,DNS:*.localhost,IP:127.0.0.1"
+    
+    echo "✅ Самоподписанные сертификаты сгенерированы!"
+    echo "⚠️ Внимание: Браузеры будут показывать предупреждение для самоподписанных сертификатов"
+fi
+
+# Установка правильных прав
+chmod 600 "$CERT_DIR/key.pem"
+chmod 644 "$CERT_DIR/cert.pem"
+
+echo ""
+echo "📁 Сертификаты сохранены в: $CERT_DIR"
+echo "   - cert.pem (публичный сертификат)"
+echo "   - key.pem (приватный ключ)"
+echo ""
+
+# Создание конфигурации для Nginx (если используется)
+if [ -f "/etc/nginx/nginx.conf" ]; then
+    echo "🔄 Обновление конфигурации Nginx..."
+    
+    cat > /etc/nginx/conf.d/ssl.conf << NGINX_EOF
+ssl_protocols TLSv1.2 TLSv1.3;
+ssl_prefer_server_ciphers on;
+ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
+ssl_session_cache shared:SSL:10m;
+ssl_session_timeout 10m;
+NGINX_EOF
+    
+    echo "✅ Конфигурация Nginx обновлена!"
 fi
 
 echo ""
-echo "📋 NEXT STEPS:"
-echo "1. Update docker-compose.yml to mount certificates:"
-echo "   volumes:"
-echo "     - ./certs:/app/certs:ro"
+echo "🎉 SSL настройка завершена!"
 echo ""
-echo "2. Set environment variables in .env.production:"
-echo "   SSL_CERT_FILE=/app/certs/server.crt"
-echo "   SSL_KEY_FILE=/app/certs/server.key"
+echo "Следующие шаги:"
+echo "1. Для production: замените самоподписанные сертификаты на настоящие от Let's Encrypt"
+echo "2. Настройте Docker Compose для использования SSL (см. docker-compose.prod.yml)"
+echo "3. Перезапустите сервис: docker-compose restart"
 echo ""
-echo "3. Restart the application:"
-echo "   docker-compose restart"
-echo ""
-echo "🎉 SSL Setup Complete!"
+echo "Для автоматического обновления Let's Encrypt добавьте в crontab:"
+echo "0 0 1 * * certbot renew --quiet"
