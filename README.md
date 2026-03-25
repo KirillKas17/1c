@@ -1,139 +1,143 @@
-# 1C Dashboard Service 🚀
+# 1C Dashboard Service 📊
 
-**«Загрузил файл из 1С → получил готовый отчёт для директора за 2 минуты»**
+Автоматизированная система построения дашбордов и прогнозирования на основе данных из 1С.
 
-SaaS-сервис для малого и среднего бизнеса, который автоматически преобразует сырые XLSX-выгрузки из 1С в готовые аналитические дашборды и презентации — без настройки, программирования и интеграций.
+## 🚀 Возможности
 
-## ✨ Возможности
+- **Загрузка файлов**: XLSX/XLS/CSV из 1С
+- **AI-детекция**: Автоматическое распознавание структуры данных
+- **45+ бизнес-правил**: Для ритейла, производства, финансов, услуг
+- **Прогнозирование**: 5 методов ML (Prophet, XGBoost, Ensemble)
+- **Экспорт**: PDF и PowerPoint отчеты
+- **REST API**: Полноценное FastAPI приложение
 
-- 🤖 **AI-распознавание структуры** — автоматическое определение колонок, иерархий и типов данных
-- 📊 **Бизнес-правила** — 20+ готовых метрик (маржинальность, ABC-анализ, когорты и др.)
-- 🔮 **Прогнозирование** — продвинутые ML-модели (Prophet, ARIMA, XGBoost) для прогноза ключевых показателей
-- 🎨 **UI Kit** — 7+ типов визуализаций с защитой от перегрузки
-- 📤 **Экспорт** — PNG, PDF, PPTX с авто-выводами
+## 📦 Быстрый старт
 
-## 🏗 Архитектура
-
-```
-┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
-│ Data Ingestion  │ →  │ Business Rules   │ →  │ Forecasting     │
-│ AI-распознавание│    │ Метрики          │    │ ML-прогноз      │
-└─────────────────┘    └──────────────────┘    └─────────────────┘
-                                                        ↓
-┌─────────────────┐    ┌──────────────────┐            │
-│ UI Kit Renderer │ ←  │ Dashboard        │ ←──────────┘
-│ Визуализация    │    │ Optimizer        │
-└─────────────────┘    │ Защита от overload│
-                       └──────────────────┘
-```
-
-## 📁 Структура проекта
-
-```
-1c-dashboard-service/
-├── docs/                    # Документация
-│   ├── CONCEPT.md          # Концепция продукта
-│   ├── ROADMAP.md          # Дорожная карта
-│   ├── REQUIREMENTS.md     # Требования
-│   ├── FORECASTING_MODULE.md # Модуль прогнозирования
-│   └── BUSINESS_RULES/     # YAML бизнес-правила
-├── config/                  # Конфигурации
-│   └── field_mappings.py   # Словарь полей 1С
-├── src/                     # Исходный код
-│   ├── core/               # Ядро системы
-│   ├── rules/              # Бизнес-правила
-│   ├── ui/                 # UI компоненты
-│   ├── api/                # FastAPI endpoints
-│   └── storage/            # Модели данных
-├── tests/                   # Тесты
-└── docker/                  # Docker конфигурация
-```
-
-## 🚀 Быстрый старт
+### Через Docker Compose (рекомендуется)
 
 ```bash
 # Клонировать репозиторий
-git clone https://github.com/KirillKas17/1c.git
-cd 1c
+git clone https://github.com/your-org/onec-dashboard.git
+cd onec-dashboard
 
-# Установить зависимости
-pip install -e .
+# Скопировать .env.example в .env
+cp .env.example .env
 
-# Запустить через Docker
-docker-compose up --build
+# Запустить все сервисы
+docker-compose up -d
 
-# Или локально (MVP)
-streamlit run src/ui/app.py
+# Проверить статус
+docker-compose ps
+
+# Просмотреть логи
+docker-compose logs -f api
 ```
 
-## 📊 Поддерживаемые метрики
+Приложение доступно по адресу: http://localhost:8000
+API документация: http://localhost:8000/docs
 
-### Финансы
-- Валовая маржинальность %
-- Выручка и динамика YoY/MoM
-- Прибыль по категориям
+### Локальная разработка
 
-### Клиенты
-- Активная клиентская база
-- Удержание клиентов (Retention)
-- LTV и концентрация
+```bash
+# Установить зависимости
+pip install -r requirements.txt
 
-### Товары
-- ABC-анализ
-- Оборачиваемость запасов
-- Прогноз спроса
+# Запустить PostgreSQL (через Docker)
+docker run -d --name postgres \
+  -e POSTGRES_DB=onec_dashboard \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -p 5432:5432 \
+  postgres:16-alpine
 
-### Прогнозы
-- Выручка на 1/3/6 месяцев
-- Сезонность по месяцам
-- Доверительные интервалы
+# Применить миграции
+alembic upgrade head
 
-## 💰 Тарифы
+# Запустить сервер
+uvicorn src.api.main:create_app --factory --reload
+```
 
-| Тариф | Цена | Возможности |
-|-------|------|-------------|
-| Старт | ₽990/мес | 5 загрузок, 3 шаблона, PNG |
-| Команда | ₽4 900/мес | Безлимит, PPTX, прогнозы 3 мес |
-| Бизнес | ₽19 900/мес | On-premise, API, прогнозы 12 мес |
+## 🔧 Конфигурация
 
-## 🛠 Технологический стек
+Основные переменные окружения (см. `.env.example`):
 
-- **Backend**: Python 3.11 + FastAPI
-- **AI/ML**: Ollama (llama3.2), Prophet, XGBoost, scikit-learn
-- **Analytics**: pandas, numpy, DuckDB
-- **Visualization**: Plotly, Apache ECharts
-- **Frontend**: Streamlit (MVP) → React (prod)
-- **Storage**: PostgreSQL + Redis
-- **Deploy**: Docker + Yandex Cloud
+| Переменная | Описание | По умолчанию |
+|------------|----------|--------------|
+| `DATABASE_URL` | PostgreSQL connection string | postgresql+asyncpg://... |
+| `SECRET_KEY` | JWT secret key (мин. 32 символа) | - |
+| `ENVIRONMENT` | development/staging/production | development |
+| `DEBUG` | Режим отладки | true |
+| `UPLOAD_DIR` | Директория для загрузок | ./uploads |
 
-## 📈 Дорожная карта
+## 📚 API Endpoints
 
-- ✅ **Фаза 1 (Недели 1-4)**: MVP Core — парсер, AI-детектор, 4 правила
-- 🔄 **Фаза 2 (Недели 5-8)**: AI + Learning — интерактивное подтверждение, экспорт PPTX
-- 📅 **Фаза 3 (Недели 9-12)**: Прогнозирование — ML-модели, доверительные интервалы
-- 📅 **Фаза 4 (Недели 13-16)**: Scale Prep — оптимизация, отраслевые профили
+### Аутентификация
+- `POST /api/v1/auth/register` - Регистрация
+- `POST /api/v1/auth/login` - Вход
+- `GET /api/v1/auth/me` - Профиль пользователя
 
-## 📄 Документация
+### Файлы
+- `POST /api/v1/files/upload` - Загрузка файла
+- `GET /api/v1/files/{id}/status` - Статус обработки
 
-- [Концепция продукта](docs/CONCEPT.md)
-- [Дорожная карта](docs/ROADMAP.md)
-- [Требования](docs/REQUIREMENTS.md)
-- [Модуль прогнозирования](docs/FORECASTING_MODULE.md)
-- [Бизнес-правила](docs/BUSINESS_RULES/)
+### Дашборды
+- `POST /api/v1/dashboard/create` - Создание дашборда
+- `GET /api/v1/dashboard/{id}` - Получение дашборда
+- `GET /api/v1/dashboard/export/pdf` - Экспорт в PDF
 
-## 🤝 Участие в проекте
+### Прогнозирование
+- `POST /api/v1/forecast/run` - Запуск прогноза
+- `GET /api/v1/forecast/{id}` - Результаты прогноза
 
-1. Fork репозиторий
-2. Создай ветку (`git checkout -b feature/amazing-feature`)
-3. Закоммить изменения (`git commit -m 'Add amazing feature'`)
-4. Push (`git push origin feature/amazing-feature`)
-5. Открой Pull Request
+## 🏗️ Архитектура
 
-## 📬 Контакты
+```
+src/
+├── api/           # FastAPI приложение
+│   ├── main.py    # Точка входа
+│   ├── auth.py    # JWT аутентификация
+│   ├── config.py  # Конфигурация
+│   ├── db/        # Database layer
+│   └── models/    # SQLAlchemy модели
+├── core/          # Бизнес-логика
+│   ├── parser.py              # Парсер Excel/CSV
+│   ├── ai_detector.py         # AI детекция структуры
+│   ├── business_rules_engine.py # Бизнес-правила
+│   └── forecasting.py         # ML прогнозирование
+├── export/        # Экспорт отчетов
+│   ├── pdf_exporter.py
+│   └── pptx_exporter.py
+└── schemas/       # Pydantic схемы
+```
 
-- GitHub: [@KirillKas17](https://github.com/KirillKas17)
-- Email: support@1cdashboard.ru (будущий)
+## 🧪 Тестирование
 
----
+```bash
+# Запустить тесты
+pytest tests/ -v
 
-**Лицензия**: MIT License © 2024
+# С coverage
+pytest tests/ -v --cov=src --cov-report=html
+```
+
+## 📈 Мониторинг
+
+- **Metrics**: http://localhost:8000/metrics (Prometheus format)
+- **Health Check**: http://localhost:8000/health
+
+## 🔐 Безопасность
+
+- JWT токены (access + refresh)
+- Rate limiting (60 запросов/мин)
+- Валидация входных данных
+- Audit логирование всех действий
+- HTTPS в production (требуется настройка SSL)
+
+## 📄 Лицензия
+
+MIT License
+
+## 🤝 Поддержка
+
+Email: support@onecdashboard.ru
+Docs: https://docs.onecdashboard.ru

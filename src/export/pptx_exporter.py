@@ -15,9 +15,9 @@ from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
 import pandas as pd
 from io import BytesIO
 
-from src.utils.logger import get_logger
+from src.utils.logger import setup_logger
 
-logger = get_logger(__name__)
+logger = setup_logger(__name__)
 
 
 class PowerPointExporter:
